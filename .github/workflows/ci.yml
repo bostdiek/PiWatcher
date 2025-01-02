@@ -1,0 +1,38 @@
+name: CI for GuardPiWatch
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-zero:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.11'
+
+      - name: Install development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[dev]
+
+      - name: Run pre-commit
+        run: |
+          pre-commit run
+
+      - name: Install dependencies for Camera [Raspberry Pi Zero]
+        run: |
+          pip install .[camera]
+
+      - name: Run tests (if any)
+        run: |
+          pytest
