@@ -1,0 +1,20 @@
+[project]
+name = "piwatcher"
+version = "0.1.0"
+description = "A project for using Raspberry Pi's for home security"
+readme = "README.md"
+license = { text = "MIT License" }
+authors = [{ name = "Bryan Ostdiek", email = "bostdiek@gmail.com" }]
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = ["black==24.10.0", "isort==5.12.0", "pre-commit==4.0.1", "pytest==8.3.4"]
+camera = ["opencv-python", "fastapi", "uvicorn"]
+base = ["opencv-python", "fastapi", "uvicorn", "pydantic"]
+
+[tool.black]
+line-length = 79
+
+[tool.isort]
+profile = "black"
+line_length = 79
