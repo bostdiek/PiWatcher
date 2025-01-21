@@ -1,0 +1,35 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: self-hosted  # Use your self-hosted runner label here
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v4
+        with:
+          push: true
+          context: ./piwatcher/camera/media-server
+          file: ./piwatcher/camera/media-server/Dockerfile
+          tags: |
+            your-dockerhub-username/piwatcher-camera:latest
+            your-dockerhub-username/piwatcher-camera:armv6
+            your-dockerhub-username/piwatcher-camera:arm64
+          platforms: linux/arm/v6,linux/arm64
