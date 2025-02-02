@@ -26,6 +26,7 @@ jobs:
       - name: Install dependencies from pyproject.toml
         run: |
           python -m pip install --upgrade pip
+          cd piwatcher/base
           pip install poetry
           poetry install
 
