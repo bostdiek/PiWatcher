@@ -70,18 +70,18 @@ jobs:
           overwrite: true
           include-hidden-files: false
 
-  docker_build:
-      runs-on: ubuntu-latest
-      needs: build
-      steps:
-        - name: Check out repository
-          uses: actions/checkout@v2
+  # docker_build:
+  #     runs-on: ubuntu-latest
+  #     needs: build
+  #     steps:
+  #       - name: Check out repository
+  #         uses: actions/checkout@v2
 
-        - name: Build Docker image
-          run: |
-            cd piwatcher/base
-            docker build -t piwatcher:latest .
+  #       - name: Build Docker image
+  #         run: |
+  #           cd piwatcher/base
+  #           docker build -t piwatcher:latest .
 
-        - name: Push Docker image (optional)
-          run: |
-            docker push piwatcher:latest
+  #       - name: Push Docker image (optional)
+  #         run: |
+  #           docker push piwatcher:latest
