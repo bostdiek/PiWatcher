@@ -51,6 +51,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies for build
+        working-directory: piwatcher/base
         run: |
           python -m pip install --upgrade pip
           pip install poetry
@@ -58,8 +59,8 @@ jobs:
           poetry install --no-interaction
 
       - name: Build the package
+        working-directory: piwatcher/base
         run: |
-          cd piwatcher/base
           poetry build
 
       - name: Upload wheel artifacts
