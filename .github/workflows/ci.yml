@@ -21,7 +21,7 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version }}@latest
 
       - name: Install dependencies from pyproject.toml
         run: |
@@ -38,7 +38,7 @@ jobs:
     needs: test
     strategy:
       matrix:
-        python-version: [3.9, 3.10, 3.11]
+        python-version: [3.9.21, 3.10.16, 3.11.11]
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
