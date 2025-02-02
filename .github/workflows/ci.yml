@@ -27,7 +27,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install poetry
-          poetry install
+          poetry install --no-interaction --dev  # Ensures dev dependencies like pytest are installed
 
       - name: Run tests
         run: |
