@@ -63,7 +63,7 @@ jobs:
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: python-wheels-${{ matrix.python-version }}
+          name: python-wheels--${{ matrix.python-version }}-${{ github.run_id }}
           path: piwatcher/base/dist/*.whl
           if-no-files-found: warn
           compression-level: 6
