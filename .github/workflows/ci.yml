@@ -30,6 +30,7 @@ jobs:
           poetry install --no-interaction --with dev  # Ensures dev dependencies like pytest are installed
 
       - name: Run tests with coverage
+        working-directory: piwatcher/base
         run: |
           poetry run pytest --cov=piwatcher_base --cov-report=xml
 
