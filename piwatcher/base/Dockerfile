@@ -11,8 +11,5 @@ COPY ${WHEEL_PATH} /app/
 # Install dependencies from the wheel file
 RUN pip install /app/*.whl
 
-# Install additional dependencies if needed
-RUN pip install some-other-package
-
 # Set the command to run the app
-CMD ["python", "app.py"]
+CMD ["python", "piwatcher_base/viewer.py"]
