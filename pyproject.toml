@@ -5,22 +5,25 @@ description = "A project for using Raspberry Pi's for home security"
 readme = "README.md"
 license = { text = "MIT License" }
 authors = [{ name = "Bryan Ostdiek", email = "bostdiek@gmail.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.8"
 
+# Poetry-specific configuration
 [tool.poetry]
 name = "piwatcher"
 version = "0.1.0"
 description = "PiWatcher project"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Bryan Ostdiek <bostdiek@gmail.com>"]
 
+# Root dependencies (Poetry will handle this)
 [tool.poetry.dependencies]
 python = "^3.8"
 piwatcher-base = { path = "piwatcher/base" }
-piwatcher-camera = { path = "piwatcher/camera" }
+# piwatcher-camera = { path = "piwatcher/camera" }
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.0"
 
+# Formatting tools
 [tool.black]
 line-length = 120
 

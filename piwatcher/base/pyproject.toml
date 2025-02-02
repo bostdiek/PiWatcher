@@ -9,9 +9,11 @@ description = "A robust RTSP video management system for Raspberry Pi."
 authors = [{ name = "Bryan Ostdiek", email = "bostdiek@gmail.com" }]
 dependencies = ["python-dotenv", "fastapi", "uvicorn", "opencv-python"]
 
-[tool.setuptools.packages.find]
-where = ["piwatcher_base"]
+# Optional: Declare test dependencies for the base project if separate tests exist for it
+[tool.poetry.dev-dependencies]
+pytest = "^6.0"
 
+# Formatting tools
 [tool.black]
 line-length = 120
 
