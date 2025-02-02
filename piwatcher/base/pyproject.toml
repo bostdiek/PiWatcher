@@ -1,30 +1,27 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "piwatcher"
+name = "piwatcher_base"
 version = "0.1.0"
-description = "A project for using Raspberry Pi's for home security"
-readme = "README.md"
-license = { text = "MIT License" }
+description = "A robust RTSP video management system for Raspberry Pi."
 authors = [{ name = "Bryan Ostdiek", email = "bostdiek@gmail.com" }]
+dependencies = ["python-dotenv", "fastapi", "uvicorn", "opencv-python"]
 python = ">=3.9"
 
-# Poetry-specific configuration
 [tool.poetry]
-name = "piwatcher"
+name = "piwatcher_base"
 version = "0.1.0"
-description = "PiWatcher project"
+description = "A robust RTSP video management system for Raspberry Pi."
 authors = ["Bryan Ostdiek <bostdiek@gmail.com>"]
-python = ">=3.9"
 
 
-# Root dependencies (Poetry will handle this)
 [tool.poetry.dependencies]
 python = ">=3.9"
-piwatcher-base = { path = "piwatcher/base" }
-# piwatcher-camera = { path = "piwatcher/camera" }
 
 # Optional: Declare test dependencies for the base project if separate tests exist for it
 [tool.poetry.group.dev.dependencies]
-python = ">=3.9"
 pytest = "^6.0"
 pytest-cov = "^4.0"
 coverage = "^7.0"
