@@ -15,8 +15,10 @@ name = "piwatcher_base"
 version = "0.1.0"
 description = "A robust RTSP video management system for Raspberry Pi."
 authors = ["Bryan Ostdiek <bostdiek@gmail.com>"]
-python = ">=3.9"
 
+
+[tool.poetry.dependencies]
+python = ">=3.9"
 
 # Optional: Declare test dependencies for the base project if separate tests exist for it
 [tool.poetry.group.dev.dependencies]
