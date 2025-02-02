@@ -77,16 +77,10 @@ jobs:
         - name: Check out repository
           uses: actions/checkout@v2
 
-        - name: Download Python wheels
-          uses: actions/download-artifact@v4
-          with:
-            name: python-wheels
-            path: ./wheels
-
         - name: Build Docker image
           run: |
             cd piwatcher/base
-            docker build --build-arg WHEEL_PATH=./wheels/piwatcher_base-*.whl -t piwatcher:latest .
+            docker build -t piwatcher:latest .
 
         - name: Push Docker image (optional)
           run: |

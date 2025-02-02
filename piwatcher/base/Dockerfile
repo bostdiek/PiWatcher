@@ -1,15 +1,13 @@
-# Use a base Python image
-FROM python:3.11-slim
-
-# Set the working directory in the container
+# ----- Builder stage -----
+FROM python:3.11-slim as builder
 WORKDIR /app
+COPY . .
+RUN pip install --upgrade pip && pip install poetry
+RUN poetry build
 
-# Copy the wheel file from the build context into the image
-ARG WHEEL_PATH
-COPY ${WHEEL_PATH} /app/
-
-# Install dependencies from the wheel file
+# ----- Final image -----
+FROM python:3.11-slim
+WORKDIR /app
+COPY --from=builder /app/dist/*.whl /app/
 RUN pip install /app/*.whl
-
-# Set the command to run the app
 CMD ["python", "piwatcher_base/viewer.py"]
