@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools", "wheel", "python-dotenv", "fastapi", "uvicorn"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "piwatcher_base"
+version = "0.1.0"
+description = "A robust RTSP video management system for Raspberry Pi."
+authors = [{ name = "Bryan Ostdiek", email = "bostdiek@gmail.com" }]
+dependencies = ["python-dotenv", "fastapi", "uvicorn", "opencv-python"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120
