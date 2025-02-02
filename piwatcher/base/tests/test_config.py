@@ -1,4 +1,4 @@
-from piwatcher.base.piwatcher_base.config import Config
+from piwatcher_base.config import Config
 
 
 def test_default_values(monkeypatch):
