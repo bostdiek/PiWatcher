@@ -23,7 +23,6 @@ def view_rtsp_stream(
 
     while cap.isOpened():
         ret, frame = cap.read()
-        print(ret, frame)
         logger.info("Reading frame from RTSP stream")
         logger.debug(f"Frame: {frame}")
         logger.debug(f"Ret: {ret}")
