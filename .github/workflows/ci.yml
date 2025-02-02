@@ -1,4 +1,4 @@
-name: CI for GuardPiWatch
+name: CI
 
 on:
   push:
@@ -9,30 +9,75 @@ on:
       - main
 
 jobs:
-  build-zero:
-    runs-on: ubuntu-latest
+  test:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, 3.10, 3.11]
     steps:
-      - name: Checkout code
+      - name: Check out repository
         uses: actions/checkout@v2
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
 
-      - name: Install development dependencies
+      - name: Install dependencies from pyproject.toml
         run: |
           python -m pip install --upgrade pip
-          pip install .[dev]
+          pip install poetry
+          poetry install
 
-      - name: Run pre-commit
+      - name: Run tests
         run: |
-          pre-commit run
+          pytest --maxfail=1 --disable-warnings -q
 
-      - name: Install dependencies for Camera [Raspberry Pi Zero]
-        run: |
-          pip install .[camera]
+  build:
+    runs-on: self-hosted
+    needs: test
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, 3.10, 3.11]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
 
-      - name: Run tests (if any)
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies from pyproject.toml
         run: |
-          pytest
+          python -m pip install --upgrade pip
+          pip install poetry
+          poetry install
+
+      - name: Build the package
+        run: |
+          poetry build
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: python-wheels
+          path: piwatcher/base/dist/*.whl
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+
+      - name: Build Docker image for base
+        run: |
+          docker build -t piwatcher_base piwatcher/base/
+
+      - name: Save Docker image
+        run: |
+          docker save piwatcher_base > piwatcher_base.tar
+          actions/upload-artifact@v2:
+            name: piwatcher_base_image
+            path: piwatcher_base.tar
