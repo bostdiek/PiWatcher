@@ -57,6 +57,7 @@ jobs:
 
       - name: Build the package
         run: |
+          cd piwatcher/base
           poetry build
 
       - name: Upload wheel artifacts

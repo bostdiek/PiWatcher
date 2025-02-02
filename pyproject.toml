@@ -16,11 +16,11 @@ authors = ["Bryan Ostdiek <bostdiek@gmail.com>"]
 
 # Root dependencies (Poetry will handle this)
 [tool.poetry.dependencies]
-python = "^3.8"
+python = ">=3.8"
 piwatcher-base = { path = "piwatcher/base" }
 # piwatcher-camera = { path = "piwatcher/camera" }
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "^6.0"
 
 # Formatting tools

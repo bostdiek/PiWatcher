@@ -10,7 +10,7 @@ authors = [{ name = "Bryan Ostdiek", email = "bostdiek@gmail.com" }]
 dependencies = ["python-dotenv", "fastapi", "uvicorn", "opencv-python"]
 
 # Optional: Declare test dependencies for the base project if separate tests exist for it
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "^6.0"
 
 # Formatting tools
