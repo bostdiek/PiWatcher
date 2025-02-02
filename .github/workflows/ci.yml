@@ -29,9 +29,16 @@ jobs:
           pip install poetry
           poetry install --no-interaction --with dev  # Ensures dev dependencies like pytest are installed
 
-      - name: Run tests
+      - name: Run tests with tox
         run: |
-          poetry run pytest --maxfail=1 --disable-warnings -q
+          # Run tox which should be configured to run tests with coverage
+          poetry run tox
+
+      - name: Combine and report coverage
+        run: |
+          # Combine coverage reports if you have multiple coverage data files
+          poetry run coverage combine
+          poetry run coverage report --fail-under=80
 
   build:
     runs-on: ubuntu-latest
