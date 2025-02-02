@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel", "python-dotenv", "fastapi", "uvicorn"]
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,7 +10,7 @@ authors = [{ name = "Bryan Ostdiek", email = "bostdiek@gmail.com" }]
 dependencies = ["python-dotenv", "fastapi", "uvicorn", "opencv-python"]
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["piwatcher_base"]
 
 [tool.black]
 line-length = 120

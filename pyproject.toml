@@ -7,14 +7,23 @@ license = { text = "MIT License" }
 authors = [{ name = "Bryan Ostdiek", email = "bostdiek@gmail.com" }]
 requires-python = ">=3.11"
 
-[project.optional-dependencies]
-dev = ["black==24.10.0", "isort==5.12.0", "pre-commit==4.0.1", "pytest==8.3.4"]
-camera = ["opencv-python", "fastapi", "uvicorn"]
-base = ["opencv-python", "fastapi", "uvicorn", "pydantic"]
+[tool.poetry]
+name = "piwatcher"
+version = "0.1.0"
+description = "PiWatcher project"
+authors = ["Your Name <your.email@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+piwatcher-base = { path = "piwatcher/base" }
+piwatcher-camera = { path = "piwatcher/camera" }
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.0"
 
 [tool.black]
-line-length = 79
+line-length = 120
 
 [tool.isort]
 profile = "black"
-line_length = 79
+line_length = 120
