@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "A robust RTSP video management system for Raspberry Pi."
 authors = [{ name = "Bryan Ostdiek", email = "bostdiek@gmail.com" }]
 dependencies = ["python-dotenv", "fastapi", "uvicorn", "opencv-python"]
+requires-python = ">=3.9"
 
 [tool.poetry]
 name = "piwatcher_base"
@@ -15,15 +16,17 @@ version = "0.1.0"
 description = "A robust RTSP video management system for Raspberry Pi."
 authors = ["Bryan Ostdiek <bostdiek@gmail.com>"]
 
+
 # Optional: Declare test dependencies for the base project if separate tests exist for it
 [tool.poetry.group.dev.dependencies]
 pytest = "^6.0"
-tox = "^3.24"
+pytest-cov = "^4.0"
 coverage = "^7.0"
 
 # Formatting tools
 [tool.black]
 line-length = 120
+
 
 [tool.isort]
 profile = "black"
