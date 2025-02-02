@@ -31,7 +31,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-              poetry run pytest --cov=piwatcher/base --cov-report=xml
+          poetry run pytest --cov=piwatcher_base --cov-report=xml
 
   build:
     runs-on: ubuntu-latest
