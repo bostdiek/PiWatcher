@@ -22,7 +22,6 @@ python = ">=3.9"
 
 # Optional: Declare test dependencies for the base project if separate tests exist for it
 [tool.poetry.group.dev.dependencies]
-python = ">=3.9"
 pytest = "^6.0"
 pytest-cov = "^4.0"
 coverage = "^7.0"
