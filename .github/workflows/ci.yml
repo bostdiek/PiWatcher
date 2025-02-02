@@ -70,20 +70,23 @@ jobs:
           overwrite: true
           include-hidden-files: false
 
-  docker-build:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v2
+  docker_build:
+      runs-on: ubuntu-latest
+      needs: test
+      steps:
+        - name: Check out repository
+          uses: actions/checkout@v2
 
-      - name: Build Docker image for base
-        run: |
-          docker build -t piwatcher_base piwatcher/base/
+        - name: Download Python wheels
+          uses: actions/download-artifact@v2
+          with:
+            name: python-wheels
+            path: ./wheels
 
-      - name: Save Docker image
-        run: |
-          docker save piwatcher_base > piwatcher_base.tar
-          actions/upload-artifact@v2:
-            name: piwatcher_base_image
-            path: piwatcher_base.tar
+        - name: Build Docker image
+          run: |
+            docker build --build-arg WHEEL_PATH=./wheels/piwatcher_base-*.whl -t piwatcher:latest .
+
+        - name: Push Docker image (optional)
+          run: |
+            docker push piwatcher:latest

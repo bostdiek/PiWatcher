@@ -1,13 +1,18 @@
-FROM python:3.8-slim
+# Use a base Python image
+FROM python:3.11-slim
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    python3-dev
+# Set the working directory in the container
+WORKDIR /app
 
-# Install poetry
-RUN pip install poetry
+# Copy the wheel file from the build context into the image
+ARG WHEEL_PATH
+COPY ${WHEEL_PATH} /app/
 
-# Copy and install the wheel
-COPY piwatcher_base-*.whl /tmp/
-RUN pip install /tmp/piwatcher_base-*.whl
+# Install dependencies from the wheel file
+RUN pip install /app/*.whl
+
+# Install additional dependencies if needed
+RUN pip install some-other-package
+
+# Set the command to run the app
+CMD ["python", "app.py"]
