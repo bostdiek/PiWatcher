@@ -18,6 +18,8 @@ authors = ["Bryan Ostdiek <bostdiek@gmail.com>"]
 # Optional: Declare test dependencies for the base project if separate tests exist for it
 [tool.poetry.group.dev.dependencies]
 pytest = "^6.0"
+tox = "^3.24"
+coverage = "^7.0"
 
 # Formatting tools
 [tool.black]
