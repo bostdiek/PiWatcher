@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "A robust RTSP video management system for Raspberry Pi."
 authors = [{ name = "Bryan Ostdiek", email = "bostdiek@gmail.com" }]
 dependencies = ["python-dotenv", "fastapi", "uvicorn", "opencv-python"]
+python = ">=3.9"
 
 [tool.poetry]
 name = "piwatcher_base"
