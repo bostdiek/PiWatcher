@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Form, HTTPException
 from fastapi.responses import StreamingResponse
 
 from .streaming import StreamingService
@@ -18,7 +18,7 @@ def get_live_stream(camera_id: str):
 
 
 @app.post("/cameras")
-def add_camera(camera_id: str, rtsp_url: str):
+def add_camera(camera_id: str = Form(...), rtsp_url: str = Form(...)):
     """Start streaming an RTSP camera."""
     streaming_service.add_camera(camera_id, rtsp_url)
     return {"message": "Camera added", "id": camera_id}
