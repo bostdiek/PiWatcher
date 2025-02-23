@@ -11,8 +11,10 @@ dependencies = ["python-dotenv", "fastapi", "uvicorn", "opencv-python"]
 requires-python = ">=3.9"
 
 # Optional: Declare test dependencies for the base project if separate tests exist for it
-[project.optional-dependencies]
-dev = ["pytest>=6.0", "pytest-cov>=4.0", "coverage>=7.0"]
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.4"
+pytest-cov = ">=4.0"
+coverage = ">=7.0"
 
 # Formatting tools
 [tool.black]
