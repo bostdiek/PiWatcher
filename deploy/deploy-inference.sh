@@ -151,9 +151,18 @@ main() {
     -avz \
     --delete \
     --exclude .git \
+    --exclude .env \
     --exclude .venv \
-    --exclude __pycache__ \
+    --exclude .ruff_cache \
     --exclude .pytest_cache \
+    --exclude .mypy_cache \
+    --exclude .ty \
+    --exclude .vscode \
+    --exclude '._*' \
+    --exclude ._bryan \
+    --exclude dist \
+    --exclude build \
+    --exclude __pycache__ \
     --exclude tmp \
     -e "ssh -4 -o ControlPath=${control_path}" \
     "${REPO_ROOT}/" \
