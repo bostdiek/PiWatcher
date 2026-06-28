@@ -49,14 +49,12 @@ def upgrade() -> None:
     op.add_column("heartbeats", sa.Column("wifi_power_save", sa.Boolean(), nullable=True))
     op.add_column("heartbeats", sa.Column("software_version", sa.String(length=50), nullable=True))
 
-    op.execute(
-        """
+    op.execute("""
         INSERT INTO cameras (camera_id, display_name)
         SELECT DISTINCT camera_id, camera_id FROM events
         UNION
         SELECT DISTINCT camera_id, camera_id FROM heartbeats
-        """
-    )
+        """)
 
 
 def downgrade() -> None:

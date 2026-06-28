@@ -89,7 +89,7 @@ async def camera_health(session: DbSession) -> list[dict[str, object]]:
     return [
         {
             "camera_id": heartbeat.camera_id,
-            "last_seen": heartbeat.created_at.isoformat() if heartbeat.created_at else None,
+            "last_seen": (heartbeat.created_at.isoformat() if heartbeat.created_at else None),
             "battery_pct": heartbeat.battery_pct,
             "uptime_seconds": heartbeat.uptime_seconds,
             "ip_address": heartbeat.ip_address,

@@ -5,7 +5,9 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio()
-async def test_given_missing_token_when_post_event_then_returns_422(client: AsyncClient) -> None:
+async def test_given_missing_token_when_post_event_then_returns_422(
+    client: AsyncClient,
+) -> None:
     # Act
     response = await client.post("/api/heartbeat", params={"camera_id": "feeder"})
 
