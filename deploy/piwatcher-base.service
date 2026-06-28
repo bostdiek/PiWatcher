@@ -1,7 +1,7 @@
 [Unit]
 Description=PiWatcher Base Station
-After=network-online.target docker.service
-Wants=network-online.target docker.service
+After=network-online.target docker.service piwatcher-inference.service
+Wants=network-online.target docker.service piwatcher-inference.service
 
 [Service]
 Type=simple

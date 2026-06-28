@@ -1,6 +1,5 @@
 """Inference pipeline tests."""
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pytest
@@ -15,7 +14,9 @@ from piwatcher_base.inference import (
 from piwatcher_base.models import Event
 
 
-def test_given_many_frames_when_sample_frame_paths_then_returns_even_sample(tmp_path) -> None:
+def test_given_many_frames_when_sample_frame_paths_then_returns_even_sample(
+    tmp_path,
+) -> None:
     # Arrange
     paths = [tmp_path / f"frame_{index}.jpg" for index in range(10)]
 
@@ -44,15 +45,13 @@ def test_given_mixed_results_when_choose_classification_then_returns_majority_la
 @pytest.mark.asyncio()
 async def test_given_hot_cpu_when_wait_for_safe_temperature_then_sleeps_until_cool(
     monkeypatch: pytest.MonkeyPatch,
+    test_settings,
 ) -> None:
     # Arrange
     from piwatcher_base import inference
 
-    @dataclass
-    class SettingsStub:
-        max_inference_temp_c: float = 72.0
-        cooldown_temp_c: float = 60.0
-
+    monkeypatch.setattr(test_settings, "max_inference_temp_c", 72.0)
+    monkeypatch.setattr(test_settings, "cooldown_temp_c", 60.0)
     temperatures = iter([75.0, 70.0, 59.0])
     sleep_calls: list[int] = []
 
@@ -63,7 +62,7 @@ async def test_given_hot_cpu_when_wait_for_safe_temperature_then_sleeps_until_co
     monkeypatch.setattr(inference.asyncio, "sleep", sleep_stub)
 
     # Act
-    await inference.wait_for_safe_temperature(SettingsStub())  # ty: ignore[invalid-argument-type]
+    await inference.wait_for_safe_temperature(test_settings)
 
     # Assert
     assert sleep_calls == [5]

@@ -1,13 +1,13 @@
 ---
 title: PiWatcher
 description: Motion-triggered Raspberry Pi wildlife camera system with a Pi 5 base station, PostgreSQL storage, and LAN dashboard.
-ms.date: 2026-06-27
+ms.date: 2026-06-28
 ms.topic: overview
 ---
 
 ## Overview
 
-PiWatcher is a local wildlife camera system for battery-powered Raspberry Pi Zero W camera nodes and a Raspberry Pi 5 base station. Camera nodes detect motion with `picamera2`, capture short JPEG bursts, and upload events over Wi-Fi. The base station receives frames through FastAPI, stores metadata in PostgreSQL, keeps images on disk, runs local AI inference through llama-swap, and serves a LAN dashboard.
+PiWatcher is a local wildlife camera system for battery-powered Raspberry Pi Zero W camera nodes and a Raspberry Pi 5 base station. Camera nodes detect motion with `picamera2`, capture short JPEG bursts, and upload events over Wi-Fi. The base station receives frames through FastAPI, stores metadata in PostgreSQL, keeps images on disk, optionally runs local AI inference through llama-swap, and serves a LAN dashboard.
 
 ```mermaid
 flowchart TD
@@ -17,7 +17,7 @@ flowchart TD
     api[Pi 5 FastAPI ingest<br>Bearer-token API]
     storage[Frame storage<br>NVMe date/camera/event folders]
     db[(PostgreSQL<br>events, frames, heartbeats)]
-    inference[llama-swap inference<br>LFM2-VL-450M with thermal gating]
+    inference[optional llama-swap inference<br>LFM2.5-VL-450M with thermal gating]
     dashboard[LAN dashboard<br>htmx + Jinja2 + Chart.js]
     notify[ntfy notifications]
 
@@ -39,8 +39,10 @@ flowchart TD
 ├── deploy/
 │   ├── piwatcher-base.service       Pi 5 base station systemd unit
 │   ├── piwatcher-camera.service     Pi Zero camera systemd unit
+│   ├── piwatcher-inference.service  Pi 5 host llama-swap systemd unit
 │   ├── piwatcher-ttl.service        Heartbeat cleanup oneshot service
 │   ├── piwatcher-ttl.timer          Daily heartbeat cleanup timer
+│   ├── setup-llama-swap.sh          Host llama-swap config and model setup
 │   └── setup-camera.sh              First-time Pi Zero provisioning script
 ├── packages/
 │   ├── base/
@@ -111,8 +113,9 @@ Use the generated token as `PIWATCHER_API_KEY`. For deployment, make sure the da
 PIWATCHER_API_KEY=<shared-token>
 DATABASE_URL=postgresql+asyncpg://piwatcher:piwatcher@127.0.0.1:5432/piwatcher
 FRAME_STORAGE_PATH=/mnt/nvme/piwatcher/frames
+ENABLE_INFERENCE=false
 LLAMA_SWAP_URL=http://127.0.0.1:8080/v1
-LLAMA_SWAP_MODEL=lfm2-vl-450m
+LLAMA_SWAP_MODEL=lfm2.5-vl-450m-q4_0
 NTFY_TOPIC=piwatcher
 NTFY_URL=https://ntfy.sh
 MAX_INFERENCE_TEMP_C=72.0
@@ -121,13 +124,64 @@ INFERENCE_GAP_SECONDS=15
 HEARTBEAT_TTL_DAYS=90
 ```
 
-Start PostgreSQL, llama-swap, apply migrations, and run the base server in the foreground:
+Start PostgreSQL, apply migrations, and run the base server in the foreground:
 
 ```bash
 make base-up
 ```
 
-`make base-up` prepares `tmp/llama-swap/models`, starts the llama-swap Compose service, and downloads configured model files when `LLAMA_SWAP_MODEL_URL` and `LLAMA_SWAP_MMPROJ_URL` are set. If those URLs are not set, place the GGUF files listed in `.env` into `LLAMA_SWAP_MODELS_DIR` before using inference.
+`make base-up` does not start inference unless `ENABLE_INFERENCE=true` is exported for the make command. This keeps event ingestion, storage, heartbeat, and the dashboard available when the Pi 5 inference stack is not installed or is temporarily unavailable.
+
+For local development with Docker llama-swap, prepare the model directory and start the Compose service explicitly:
+
+```bash
+make base-llama-up
+```
+
+The Docker llama-swap path is intended for local development or systems where the selected image supports the host architecture. On Raspberry Pi 5, prefer the host inference service because `ghcr.io/mostlygeek/llama-swap:unified-vulkan` may not provide a usable `linux/arm64/v8` image.
+
+Pi 5 host inference uses this path:
+
+```text
+PiWatcher base app -> http://127.0.0.1:8080/v1 -> host llama-swap -> host llama-server -> local GGUF file
+```
+
+Enable it only after `llama-swap`, `llama-server`, and the model file are present:
+
+```text
+ENABLE_INFERENCE=true
+LLAMA_SWAP_URL=http://127.0.0.1:8080/v1
+LLAMA_SWAP_MODEL=lfm2.5-vl-450m-q4_0
+LLAMA_SWAP_BIN=/home/bostdiek/.local/bin/llama-swap
+LLAMA_SERVER_BIN=/home/bostdiek/Projects/llama.cpp/build/bin/llama-server
+LLAMA_SWAP_MODELS_DIR=/mnt/nvme/piwatcher/models
+LLAMA_SWAP_MODEL_FILE=LFM2.5-VL-450M-Q4_0.gguf
+LLAMA_SWAP_MODEL_URL=<optional-download-url>
+LLAMA_SWAP_MEDIA_PATH=/home/bostdiek/Downloads
+```
+
+The generated llama-swap config passes an explicit local `--model` path to `llama-server`. The `--model` option does not download model files. `deploy/setup-llama-swap.sh` downloads `LLAMA_SWAP_MODEL_URL` only when that URL is configured; otherwise, place `LLAMA_SWAP_MODELS_DIR/LLAMA_SWAP_MODEL_FILE` on disk before starting inference.
+
+Prepare the host inference config and install the systemd unit:
+
+```bash
+bash deploy/setup-llama-swap.sh
+sudo cp deploy/piwatcher-inference.service /etc/systemd/system/piwatcher-inference.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now piwatcher-inference.service
+sudo systemctl status piwatcher-inference.service
+```
+
+Validate the host inference path before enabling `ENABLE_INFERENCE=true` for unattended operation:
+
+```bash
+"${LLAMA_SERVER_BIN}" --version
+test -r "${LLAMA_SWAP_MODELS_DIR}/${LLAMA_SWAP_MODEL_FILE}"
+curl http://127.0.0.1:8080/v1/models
+curl http://127.0.0.1:8080/v1/chat/completions \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"lfm2.5-vl-450m-q4_0","messages":[{"role":"user","content":"Say ok."}],"max_tokens":8}'
+```
 
 Use the foreground command for local development and manual Pi 5 smoke testing. For a Pi 5 that should start PiWatcher automatically on boot, install the systemd service from the repository root instead:
 
@@ -221,63 +275,70 @@ make update-cameras CAMERAS="feeder-cam.local pond-cam.local"
 
 Base station settings are loaded from `.env` by `piwatcher_base.config.Settings`.
 
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `PIWATCHER_API_KEY` | Bearer token required for camera API calls | Required |
-| `DATABASE_URL` | Async SQLAlchemy database URL | Required |
-| `FRAME_STORAGE_PATH` | Root directory for retained JPEG frames | `/mnt/nvme/piwatcher/frames` |
-| `LLAMA_SWAP_URL` | OpenAI-compatible llama-swap endpoint | `http://localhost:8080/v1` |
-| `LLAMA_SWAP_MODEL` | Model name sent to llama-swap | `lfm2-vl-450m` |
-| `LLAMA_SWAP_IMAGE` | Docker image for the llama-swap service | `ghcr.io/mostlygeek/llama-swap:unified-vulkan` |
-| `LLAMA_SWAP_MODELS_DIR` | Host directory mounted into llama-swap at `/models` | `./tmp/llama-swap/models` |
-| `LLAMA_SWAP_MODEL_FILE` | Main GGUF model filename expected by llama-swap config | `lfm2-vl-450m.gguf` |
-| `LLAMA_SWAP_MMPROJ_FILE` | Multimodal projector GGUF filename expected by llama-swap config | `lfm2-vl-450m-mmproj.gguf` |
-| `LLAMA_SWAP_MODEL_URL` | Optional URL downloaded into `LLAMA_SWAP_MODEL_FILE` when missing | Empty |
-| `LLAMA_SWAP_MMPROJ_URL` | Optional URL downloaded into `LLAMA_SWAP_MMPROJ_FILE` when missing | Empty |
-| `NTFY_TOPIC` | ntfy topic for detection alerts | `piwatcher` |
-| `NTFY_URL` | ntfy server URL | `https://ntfy.sh` |
-| `MAX_INFERENCE_TEMP_C` | Temperature where inference pauses | `72.0` |
-| `COOLDOWN_TEMP_C` | Temperature required before inference resumes | `60.0` |
-| `INFERENCE_GAP_SECONDS` | Minimum delay between inference calls | `15` |
-| `HEARTBEAT_TTL_DAYS` | Heartbeat retention window | `90` |
+| Variable                 | Purpose                                                            | Default                                        |
+| ------------------------ | ------------------------------------------------------------------ | ---------------------------------------------- |
+| `PIWATCHER_API_KEY`      | Bearer token required for camera API calls                         | Required                                       |
+| `DATABASE_URL`           | Async SQLAlchemy database URL                                      | Required                                       |
+| `FRAME_STORAGE_PATH`     | Root directory for retained JPEG frames                            | `/mnt/nvme/piwatcher/frames`                   |
+| `ENABLE_INFERENCE`       | Enables background inference after event upload                    | `false`                                        |
+| `LLAMA_SWAP_URL`         | OpenAI-compatible llama-swap endpoint                              | `http://localhost:8080/v1`                     |
+| `LLAMA_SWAP_MODEL`       | Model name sent to llama-swap                                      | `lfm2.5-vl-450m-q4_0`                          |
+| `LLAMA_SWAP_IMAGE`       | Docker image for local/development llama-swap                      | `ghcr.io/mostlygeek/llama-swap:unified-vulkan` |
+| `LLAMA_SWAP_RUNTIME`     | Setup mode for generated llama-swap config                         | `host`                                         |
+| `LLAMA_SWAP_BIN`         | Host llama-swap executable used by systemd                         | `/home/bostdiek/.local/bin/llama-swap`         |
+| `LLAMA_SERVER_BIN`       | Host llama-server executable written into llama-swap config        | `/home/bostdiek/Projects/llama.cpp/build/bin/llama-server` |
+| `LLAMA_SWAP_LISTEN`      | Host llama-swap listen address                                     | `127.0.0.1:8080`                               |
+| `LLAMA_SWAP_MODELS_DIR`  | Host directory containing local GGUF model files                   | `/mnt/nvme/piwatcher/models`                   |
+| `LLAMA_SWAP_MODEL_FILE`  | Main GGUF model filename expected by llama-swap config             | `LFM2.5-VL-450M-Q4_0.gguf`                     |
+| `LLAMA_SWAP_MMPROJ_FILE` | Multimodal projector GGUF filename expected by llama-swap config   | `lfm2-vl-450m-mmproj.gguf`                     |
+| `LLAMA_SWAP_MODEL_URL`   | Optional URL downloaded into `LLAMA_SWAP_MODEL_FILE` when missing  | Empty                                          |
+| `LLAMA_SWAP_MMPROJ_URL`  | Optional URL downloaded into `LLAMA_SWAP_MMPROJ_FILE` when missing | Empty                                          |
+| `LLAMA_SWAP_MEDIA_PATH`  | Host media path passed to llama-server for vision requests         | `/home/bostdiek/Downloads`                     |
+| `NTFY_TOPIC`             | ntfy topic for detection alerts                                    | `piwatcher`                                    |
+| `NTFY_URL`               | ntfy server URL                                                    | `https://ntfy.sh`                              |
+| `MAX_INFERENCE_TEMP_C`   | Temperature where inference pauses                                 | `72.0`                                         |
+| `COOLDOWN_TEMP_C`        | Temperature required before inference resumes                      | `60.0`                                         |
+| `INFERENCE_GAP_SECONDS`  | Minimum delay between inference calls                              | `15`                                           |
+| `HEARTBEAT_TTL_DAYS`     | Heartbeat retention window                                         | `90`                                           |
 
 Camera settings are loaded from `/home/pi/piwatcher/.env`.
 
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `CAMERA_ID` | Stable camera identifier stored with events | Required |
-| `SERVER_URL` | Base station URL | Required |
-| `PIWATCHER_API_KEY` | Shared bearer token | Required |
-| `MOTION_THRESHOLD` | Pixel difference threshold for motion detection | `7.0` |
-| `MIN_CHANGED_PCT` | Minimum changed-pixel percentage | `2.0` |
-| `CAPTURE_FPS` | JPEG capture rate during motion events | `2.0` |
-| `CAPTURE_MIN_DURATION` | Minimum event capture duration in seconds | `10.0` |
-| `COOLDOWN_SECONDS` | Quiet period before closing an event | `5.0` |
-| `HEARTBEAT_INTERVAL` | Standalone heartbeat interval in seconds | `900` |
-| `LORES_WIDTH` | Low-resolution motion frame width | `160` |
-| `LORES_HEIGHT` | Low-resolution motion frame height | `120` |
-| `MAIN_WIDTH` | Captured JPEG width | `1024` |
-| `MAIN_HEIGHT` | Captured JPEG height | `1024` |
-| `FRAME_QUEUE_DIR` | Local queue for captured frames | `/tmp/piwatcher/frames` |
-| `WIFI_POWER_SAVE` | Whether the camera may turn Wi-Fi off between uploads | `true` |
-| `WIFI_STARTUP_GRACE_SECONDS` | Startup recovery window where Wi-Fi stays on before power saving can turn it off | `600` |
+| Variable                     | Purpose                                                                          | Default                 |
+| ---------------------------- | -------------------------------------------------------------------------------- | ----------------------- |
+| `CAMERA_ID`                  | Stable camera identifier stored with events                                      | Required                |
+| `SERVER_URL`                 | Base station URL                                                                 | Required                |
+| `PIWATCHER_API_KEY`          | Shared bearer token                                                              | Required                |
+| `MOTION_THRESHOLD`           | Pixel difference threshold for motion detection                                  | `7.0`                   |
+| `MIN_CHANGED_PCT`            | Minimum changed-pixel percentage                                                 | `2.0`                   |
+| `CAPTURE_FPS`                | JPEG capture rate during motion events                                           | `2.0`                   |
+| `CAPTURE_MIN_DURATION`       | Minimum event capture duration in seconds                                        | `10.0`                  |
+| `COOLDOWN_SECONDS`           | Quiet period before closing an event                                             | `5.0`                   |
+| `HEARTBEAT_INTERVAL`         | Standalone heartbeat interval in seconds                                         | `900`                   |
+| `LORES_WIDTH`                | Low-resolution motion frame width                                                | `160`                   |
+| `LORES_HEIGHT`               | Low-resolution motion frame height                                               | `120`                   |
+| `MAIN_WIDTH`                 | Captured JPEG width                                                              | `1024`                  |
+| `MAIN_HEIGHT`                | Captured JPEG height                                                             | `1024`                  |
+| `FRAME_QUEUE_DIR`            | Local queue for captured frames                                                  | `/tmp/piwatcher/frames` |
+| `WIFI_POWER_SAVE`            | Whether the camera may turn Wi-Fi off between uploads                            | `true`                  |
+| `WIFI_STARTUP_GRACE_SECONDS` | Startup recovery window where Wi-Fi stays on before power saving can turn it off | `600`                   |
 
 ## Make Targets
 
-| Target | Description |
-| --- | --- |
-| `make lint` | Run Ruff lint and format checks |
-| `make format` | Format code and apply safe Ruff fixes |
-| `make typecheck` | Run `ty` type checking |
-| `make test` | Run the test suite |
-| `make test-cov` | Run tests with coverage output |
-| `make base-db-up` | Start the PostgreSQL Compose service |
-| `make base-llama-up` | Prepare model storage and start the llama-swap Compose service |
-| `make base-migrate` | Apply Alembic migrations for the base station database |
-| `make base-up` | Start PostgreSQL and llama-swap, apply migrations, and run the base server |
-| `make deploy-camera` | Generate camera config locally, rsync code/config, run setup, and leave the camera stopped unless `START_CAMERA=true` |
-| `make update-cameras` | Rsync camera package code and restart camera services |
-| `make setup-camera CAM=<host>` | Copy and run the first-time Pi Zero provisioning script |
+| Target                         | Description                                                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `make lint`                    | Run Ruff lint and format checks                                                                                       |
+| `make format`                  | Format code and apply safe Ruff fixes                                                                                 |
+| `make typecheck`               | Run `ty` type checking                                                                                                |
+| `make test`                    | Run the test suite                                                                                                    |
+| `make test-cov`                | Run tests with coverage output                                                                                        |
+| `make base-db-up`              | Start the PostgreSQL Compose service                                                                                  |
+| `make base-llama-up`           | Prepare model storage and start the local/development llama-swap Compose service                                      |
+| `make base-inference-up`       | Alias for explicit local/development inference startup                                                                |
+| `make base-migrate`            | Apply Alembic migrations for the base station database                                                                |
+| `make base-up`                 | Start PostgreSQL, apply migrations, and run the base server. Add `ENABLE_INFERENCE=true` to start local inference too |
+| `make deploy-camera`           | Generate camera config locally, rsync code/config, run setup, and leave the camera stopped unless `START_CAMERA=true` |
+| `make update-cameras`          | Rsync camera package code and restart camera services                                                                 |
+| `make setup-camera CAM=<host>` | Copy and run the first-time Pi Zero provisioning script                                                               |
 
 ## Operational Checks
 
