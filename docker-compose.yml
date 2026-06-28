@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: piwatcher
+      POSTGRES_PASSWORD: piwatcher
+      POSTGRES_DB: piwatcher
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U piwatcher -d piwatcher"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  llama-swap:
+    image: ${LLAMA_SWAP_IMAGE:-ghcr.io/mostlygeek/llama-swap:unified-vulkan}
+    restart: unless-stopped
+    ports:
+      - "${LLAMA_SWAP_PORT:-8080}:8080"
+    volumes:
+      - ./deploy/llama-swap/config.yaml:/etc/llama-swap/config/config.yaml:ro
+      - ${LLAMA_SWAP_MODELS_DIR:-./tmp/llama-swap/models}:/models
+    command:
+      - --config
+      - /etc/llama-swap/config/config.yaml
+      - --listen
+      - 0.0.0.0:8080
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health | grep -q OK"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

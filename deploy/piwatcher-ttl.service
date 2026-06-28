@@ -1,0 +1,8 @@
+[Unit]
+Description=Delete old PiWatcher heartbeat records
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/psql postgresql://piwatcher:piwatcher@127.0.0.1:5432/piwatcher -c "WITH deleted AS (DELETE FROM heartbeats WHERE created_at < now() - interval '90 days' RETURNING 1) SELECT count(*) AS deleted_heartbeats FROM deleted;"

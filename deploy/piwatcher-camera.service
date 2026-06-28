@@ -1,0 +1,16 @@
+[Unit]
+Description=PiWatcher Camera Service
+After=local-fs.target
+
+[Service]
+Type=simple
+User=pi
+Group=video
+ExecStart=/usr/bin/python3 -m piwatcher_camera.watcher
+WorkingDirectory=/home/pi/piwatcher
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=PiWatcher heartbeat TTL cleanup timer
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

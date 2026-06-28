@@ -1,0 +1,4 @@
+models:
+  lfm2-vl-450m:
+    cmd: llama-server --host 127.0.0.1 --port ${PORT} --model /models/lfm2-vl-450m.gguf --mmproj /models/lfm2-vl-450m-mmproj.gguf
+    ttl: 300

@@ -1,0 +1,18 @@
+[Unit]
+Description=PiWatcher Base Station
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/PiWatcher
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/home/pi/PiWatcher/.env
+ExecStartPre=/usr/bin/docker compose up -d postgres
+ExecStart=/home/pi/.local/bin/uv run --package piwatcher-base piwatcher-server
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
