@@ -112,7 +112,7 @@ Use the generated token as `PIWATCHER_API_KEY`. For deployment, make sure the da
 ```text
 PIWATCHER_API_KEY=<shared-token>
 DATABASE_URL=postgresql+asyncpg://piwatcher:piwatcher@127.0.0.1:5432/piwatcher
-FRAME_STORAGE_PATH=/mnt/nvme/piwatcher/frames
+FRAME_STORAGE_PATH=/home/bostdiek/piwatcher/frames
 ENABLE_INFERENCE=false
 LLAMA_SWAP_URL=http://127.0.0.1:8080/v1
 LLAMA_SWAP_MODEL=lfm2.5-vl-450m-q4_0
@@ -154,13 +154,15 @@ LLAMA_SWAP_URL=http://127.0.0.1:8080/v1
 LLAMA_SWAP_MODEL=lfm2.5-vl-450m-q4_0
 LLAMA_SWAP_BIN=/home/bostdiek/.local/bin/llama-swap
 LLAMA_SERVER_BIN=/home/bostdiek/Projects/llama.cpp/build/bin/llama-server
-LLAMA_SWAP_MODELS_DIR=/mnt/nvme/piwatcher/models
+LLAMA_SWAP_MODELS_DIR=/home/bostdiek/piwatcher/models
 LLAMA_SWAP_MODEL_FILE=LFM2.5-VL-450M-Q4_0.gguf
 LLAMA_SWAP_MODEL_URL=<optional-download-url>
 LLAMA_SWAP_MEDIA_PATH=/home/bostdiek/Downloads
 ```
 
 The generated llama-swap config passes an explicit local `--model` path to `llama-server`. The `--model` option does not download model files. `deploy/setup-llama-swap.sh` downloads `LLAMA_SWAP_MODEL_URL` only when that URL is configured; otherwise, place `LLAMA_SWAP_MODELS_DIR/LLAMA_SWAP_MODEL_FILE` on disk before starting inference.
+
+The Pi 5 boots from NVMe, so the default deployment paths use `bostdiek`-owned directories under `/home/bostdiek/piwatcher` instead of a separate `/mnt/nvme` mount.
 
 Prepare the host inference config and install the systemd unit:
 
@@ -170,6 +172,13 @@ sudo cp deploy/piwatcher-inference.service /etc/systemd/system/piwatcher-inferen
 sudo systemctl daemon-reload
 sudo systemctl enable --now piwatcher-inference.service
 sudo systemctl status piwatcher-inference.service
+```
+
+From a development machine, deploy the host inference files directly to the Pi 5 using the same SSH pattern as camera deploys. This creates the model directory with the correct owner, runs the setup script, installs the systemd unit, and leaves the service stopped unless requested:
+
+```bash
+make deploy-inference BASE=pi5.local BASE_USER=bostdiek
+START_INFERENCE=true make deploy-inference BASE=pi5.local BASE_USER=bostdiek
 ```
 
 Validate the host inference path before enabling `ENABLE_INFERENCE=true` for unattended operation:
@@ -279,7 +288,7 @@ Base station settings are loaded from `.env` by `piwatcher_base.config.Settings`
 | ------------------------ | ------------------------------------------------------------------ | ---------------------------------------------- |
 | `PIWATCHER_API_KEY`      | Bearer token required for camera API calls                         | Required                                       |
 | `DATABASE_URL`           | Async SQLAlchemy database URL                                      | Required                                       |
-| `FRAME_STORAGE_PATH`     | Root directory for retained JPEG frames                            | `/mnt/nvme/piwatcher/frames`                   |
+| `FRAME_STORAGE_PATH`     | Root directory for retained JPEG frames                            | `/home/bostdiek/piwatcher/frames`              |
 | `ENABLE_INFERENCE`       | Enables background inference after event upload                    | `false`                                        |
 | `LLAMA_SWAP_URL`         | OpenAI-compatible llama-swap endpoint                              | `http://localhost:8080/v1`                     |
 | `LLAMA_SWAP_MODEL`       | Model name sent to llama-swap                                      | `lfm2.5-vl-450m-q4_0`                          |
@@ -288,7 +297,7 @@ Base station settings are loaded from `.env` by `piwatcher_base.config.Settings`
 | `LLAMA_SWAP_BIN`         | Host llama-swap executable used by systemd                         | `/home/bostdiek/.local/bin/llama-swap`         |
 | `LLAMA_SERVER_BIN`       | Host llama-server executable written into llama-swap config        | `/home/bostdiek/Projects/llama.cpp/build/bin/llama-server` |
 | `LLAMA_SWAP_LISTEN`      | Host llama-swap listen address                                     | `127.0.0.1:8080`                               |
-| `LLAMA_SWAP_MODELS_DIR`  | Host directory containing local GGUF model files                   | `/mnt/nvme/piwatcher/models`                   |
+| `LLAMA_SWAP_MODELS_DIR`  | Host directory containing local GGUF model files                   | `/home/bostdiek/piwatcher/models`              |
 | `LLAMA_SWAP_MODEL_FILE`  | Main GGUF model filename expected by llama-swap config             | `LFM2.5-VL-450M-Q4_0.gguf`                     |
 | `LLAMA_SWAP_MMPROJ_FILE` | Multimodal projector GGUF filename expected by llama-swap config   | `lfm2-vl-450m-mmproj.gguf`                     |
 | `LLAMA_SWAP_MODEL_URL`   | Optional URL downloaded into `LLAMA_SWAP_MODEL_FILE` when missing  | Empty                                          |

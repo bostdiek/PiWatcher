@@ -14,7 +14,7 @@ readonly DEFAULT_LLAMA_SWAP_BIN="/home/bostdiek/.local/bin/llama-swap"
 readonly DEFAULT_LLAMA_SERVER_BIN="/home/bostdiek/Projects/llama.cpp/build/bin/llama-server"
 readonly DEFAULT_LLAMA_SWAP_LISTEN="127.0.0.1:8080"
 readonly DEFAULT_LLAMA_SWAP_MODEL="lfm2.5-vl-450m-q4_0"
-readonly DEFAULT_LLAMA_SWAP_MODELS_DIR="/mnt/nvme/piwatcher/models"
+readonly DEFAULT_LLAMA_SWAP_MODELS_DIR="/home/bostdiek/piwatcher/models"
 readonly DEFAULT_LLAMA_SWAP_MODEL_FILE="LFM2.5-VL-450M-Q4_0.gguf"
 readonly DEFAULT_LLAMA_SWAP_MEDIA_PATH="/home/bostdiek/Downloads"
 
