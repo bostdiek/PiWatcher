@@ -1,5 +1,5 @@
 # Makefile - PiWatcher development and deployment
-.PHONY: lint typecheck test test-cov base-db-up base-migrate base-llama-up base-inference-up base-up deploy-camera deploy-inference update-cameras setup-camera
+.PHONY: lint typecheck test test-cov base-db-up base-migrate base-llama-up base-inference-up base-up deploy-base deploy-camera deploy-inference update-cameras setup-camera
 
 # Configuration
 CAMERAS ?= feeder-cam.local pond-cam.local
@@ -52,6 +52,10 @@ base-up: $(BASE_UP_DEPS)
 deploy-camera:
 	@if [ -z "$(CAM)" ]; then echo "Usage: make deploy-camera CAM=pizero.local CAMERA_USER=pizero"; exit 1; fi
 	bash deploy/deploy-camera.sh $(CAM) $(CAMERA_USER)
+
+deploy-base:
+	@if [ -z "$(BASE)" ]; then echo "Usage: make deploy-base BASE=pi5.local BASE_USER=bostdiek"; exit 1; fi
+	bash deploy/deploy-base.sh $(BASE) $(BASE_USER)
 
 deploy-inference:
 	@if [ -z "$(BASE)" ]; then echo "Usage: make deploy-inference BASE=pi5.local BASE_USER=bostdiek"; exit 1; fi

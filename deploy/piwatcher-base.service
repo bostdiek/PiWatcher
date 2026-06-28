@@ -5,12 +5,12 @@ Wants=network-online.target docker.service piwatcher-inference.service
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/PiWatcher
+User=bostdiek
+WorkingDirectory=/home/bostdiek/Projects/PiWatcher
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=/home/pi/PiWatcher/.env
+EnvironmentFile=/home/bostdiek/Projects/PiWatcher/.env
 ExecStartPre=/usr/bin/docker compose up -d postgres
-ExecStart=/home/pi/.local/bin/uv run --package piwatcher-base piwatcher-server
+ExecStart=/home/bostdiek/.local/bin/uv run --package piwatcher-base piwatcher-server
 Restart=on-failure
 RestartSec=10
 
