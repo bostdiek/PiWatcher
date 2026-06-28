@@ -48,6 +48,17 @@ class WildlifeClassification(BaseModel):
     description: str = Field(max_length=200)
 
 
+def summarize_response_body(response: httpx.Response, limit: int = 500) -> str:
+    """Return a bounded response body summary for inference diagnostics."""
+
+    text = response.text.strip()
+    if not text:
+        return "<empty>"
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...<truncated>"
+
+
 class LlamaSwapClassifier:
     """Thin OpenAI-compatible llama-swap classifier adapter."""
 
@@ -86,9 +97,24 @@ class LlamaSwapClassifier:
                 f"{self.settings.llama_swap_url.rstrip('/')}/chat/completions",
                 json=payload,
             )
+        try:
             response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        return WildlifeClassification.model_validate_json(content)
+            content = response.json()["choices"][0]["message"]["content"]
+            return WildlifeClassification.model_validate_json(content)
+        except httpx.HTTPStatusError:
+            logger.warning(
+                "Inference endpoint returned HTTP %s: %s",
+                response.status_code,
+                summarize_response_body(response),
+            )
+            raise
+        except (KeyError, ValidationError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Inference endpoint returned an unusable response: %s; body=%s",
+                exc,
+                summarize_response_body(response),
+            )
+            raise
 
 
 def get_cpu_temp() -> float:
@@ -120,7 +146,9 @@ async def wait_for_safe_temperature(settings: Settings) -> None:
         await asyncio.sleep(5)
 
 
-def choose_classification(results: list[WildlifeClassification]) -> WildlifeClassification:
+def choose_classification(
+    results: list[WildlifeClassification],
+) -> WildlifeClassification:
     """Choose the majority label, using confidence as the tie-breaker."""
 
     if not results:
@@ -162,7 +190,13 @@ async def classify_event_background(event_id: int, frame_paths: list[Path]) -> N
                 exc,
             )
             break
-        except (httpx.HTTPError, OSError, KeyError, ValidationError, json.JSONDecodeError):
+        except (
+            httpx.HTTPError,
+            OSError,
+            KeyError,
+            ValidationError,
+            json.JSONDecodeError,
+        ):
             logger.warning("Failed to classify frame %s for event %s", frame_path, event_id)
         if index < len(sampled_paths) - 1 and settings.inference_gap_seconds > 0:
             await asyncio.sleep(settings.inference_gap_seconds)

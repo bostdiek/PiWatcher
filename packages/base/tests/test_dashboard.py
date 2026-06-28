@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from piwatcher_base.models import Camera, Event, Frame, Heartbeat
+from piwatcher_base.routes import dashboard
 
 
 @pytest.mark.asyncio()
@@ -154,3 +155,33 @@ async def test_given_legacy_heartbeat_when_health_requested_then_renders_without
     # Assert
     assert response.status_code == 200
     assert "legacy-cam" in response.text
+
+
+def test_given_display_timezone_when_format_datetime_then_renders_local_time(
+    test_settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.setattr(test_settings, "display_timezone", "America/Chicago")
+    timestamp = datetime(2026, 6, 28, 16, 10, tzinfo=UTC)
+
+    # Act
+    formatted = dashboard.format_datetime(timestamp)
+
+    # Assert
+    assert formatted == "2026-06-28 11:10 CDT"
+
+
+def test_given_display_timezone_when_format_time_then_renders_local_chart_label(
+    test_settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    monkeypatch.setattr(test_settings, "display_timezone", "America/Chicago")
+    timestamp = datetime(2026, 6, 28, 16, 10, tzinfo=UTC)
+
+    # Act
+    formatted = dashboard.format_time(timestamp)
+
+    # Assert
+    assert formatted == "11:10"

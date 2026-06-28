@@ -1,9 +1,11 @@
 """LAN dashboard HTML routes."""
 
 import json
-from datetime import UTC, datetime, timedelta
+import logging
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -19,6 +21,7 @@ from . import ws
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = PACKAGE_ROOT / "templates"
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["dashboard"])
 router.include_router(ws.router)
@@ -326,7 +329,7 @@ def format_event_detail(event: Event) -> dict[str, Any]:
     summary.update(
         {
             "event_start_display": format_datetime(event.event_start),
-            "event_end_display": format_datetime(event.event_end) if event.event_end else None,
+            "event_end_display": (format_datetime(event.event_end) if event.event_end else None),
             "raw_classification_json": json.dumps(event.raw_classification or {}, indent=2),
             "frames": [
                 format_frame(frame)
@@ -410,13 +413,25 @@ def normalize_datetime(value: datetime | None) -> datetime | None:
     return value
 
 
+def display_timezone() -> tzinfo:
+    """Return the timezone used for dashboard display timestamps."""
+
+    timezone_name = get_settings().display_timezone
+    if timezone_name:
+        try:
+            return ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            logger.warning("Invalid display timezone %s; falling back to UTC", timezone_name)
+    return datetime.now().astimezone().tzinfo or UTC
+
+
 def format_datetime(value: datetime | None) -> str:
     """Return compact local dashboard timestamp text."""
 
     normalized = normalize_datetime(value)
     if normalized is None:
         return "--"
-    return normalized.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    return normalized.astimezone(display_timezone()).strftime("%Y-%m-%d %H:%M %Z")
 
 
 def format_time(value: datetime | None) -> str:
@@ -425,7 +440,7 @@ def format_time(value: datetime | None) -> str:
     normalized = normalize_datetime(value)
     if normalized is None:
         return "--"
-    return normalized.astimezone(UTC).strftime("%H:%M")
+    return normalized.astimezone(display_timezone()).strftime("%H:%M")
 
 
 def relative_time(value: datetime | None) -> str:

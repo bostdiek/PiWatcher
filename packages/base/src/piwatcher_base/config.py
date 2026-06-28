@@ -20,6 +20,10 @@ class Settings(BaseSettings):
         default=Path("/home/bostdiek/piwatcher/frames"),
         validation_alias=AliasChoices("FRAME_STORAGE_PATH", "PIWATCHER_FRAME_STORAGE_PATH"),
     )
+    display_timezone: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("DISPLAY_TIMEZONE", "PIWATCHER_DISPLAY_TIMEZONE"),
+    )
     llama_swap_url: str = Field(
         default="http://localhost:8080/v1",
         validation_alias=AliasChoices("LLAMA_SWAP_URL", "PIWATCHER_LLAMA_SWAP_URL"),
