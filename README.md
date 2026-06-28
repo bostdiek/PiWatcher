@@ -79,10 +79,13 @@ make typecheck
 make test
 ```
 
-Run the base server locally after creating `.env` from `.env.example`:
+Run the base server locally after creating `.env` from `.env.example`. You can
+also keep Mac-specific values in a private `mac.env` file and copy it to `.env`
+before local startup:
 
 ```bash
 cp .env.example .env
+cp mac.env .env
 python3 -c "import secrets; print(secrets.token_hex(32))"
 make base-up
 ```
@@ -113,6 +116,7 @@ Use the generated token as `PIWATCHER_API_KEY`. For deployment, make sure the da
 PIWATCHER_API_KEY=<shared-token>
 DATABASE_URL=postgresql+asyncpg://piwatcher:piwatcher@127.0.0.1:5432/piwatcher
 FRAME_STORAGE_PATH=/home/bostdiek/piwatcher/frames
+DISPLAY_TIMEZONE=America/Chicago
 ENABLE_INFERENCE=false
 LLAMA_SWAP_URL=http://127.0.0.1:8080/v1
 LLAMA_SWAP_MODEL=lfm2.5-vl-450m-q4_0
@@ -157,10 +161,14 @@ LLAMA_SERVER_BIN=/home/bostdiek/Projects/llama.cpp/build/bin/llama-server
 LLAMA_SWAP_MODELS_DIR=/home/bostdiek/piwatcher/models
 LLAMA_SWAP_MODEL_FILE=LFM2.5-VL-450M-Q4_0.gguf
 LLAMA_SWAP_MODEL_URL=<optional-download-url>
+LLAMA_SWAP_MMPROJ_FILE=mmproj-LFM2.5-VL-450m-Q8_0.gguf
+LLAMA_SWAP_MMPROJ_URL=<optional-download-url>
 LLAMA_SWAP_MEDIA_PATH=/home/bostdiek/Downloads
 ```
 
 The generated llama-swap config passes an explicit local `--model` path to `llama-server`. The `--model` option does not download model files. `deploy/setup-llama-swap.sh` downloads `LLAMA_SWAP_MODEL_URL` only when that URL is configured; otherwise, place `LLAMA_SWAP_MODELS_DIR/LLAMA_SWAP_MODEL_FILE` on disk before starting inference.
+
+Vision classification requires the matching multimodal projector. When `LLAMA_SWAP_MMPROJ_FILE` is configured, `deploy/setup-llama-swap.sh` also downloads `LLAMA_SWAP_MMPROJ_URL` when needed and adds `--mmproj` to the generated llama-server command.
 
 The Pi 5 boots from NVMe, so the default deployment paths use `bostdiek`-owned directories under `/home/bostdiek/piwatcher` instead of a separate `/mnt/nvme` mount.
 
@@ -180,6 +188,20 @@ From a development machine, deploy the host inference files directly to the Pi 5
 make deploy-inference BASE=pi5.local BASE_USER=bostdiek
 START_INFERENCE=true make deploy-inference BASE=pi5.local BASE_USER=bostdiek
 ```
+
+Keep Pi-specific base settings in a private `pi5.env` file. `make deploy-base`
+copies `pi5.env` to the remote project as `.env` when the file exists, which
+keeps Mac development paths out of the Pi runtime. Use `BASE_ENV_FILE` to deploy
+a different local env profile.
+
+```bash
+cp pi5.env.example pi5.env
+START_BASE=true ENABLE_BASE_SERVICE=true make deploy-base BASE=pi5.local BASE_USER=bostdiek
+BASE_ENV_FILE=staging.env make deploy-base BASE=pi5.local BASE_USER=bostdiek
+```
+
+Keep `mac.env`, `pi5.env`, and `.env` out of source control because they contain
+the shared API key and host-specific paths.
 
 Validate the host inference path before enabling `ENABLE_INFERENCE=true` for unattended operation:
 
@@ -289,6 +311,7 @@ Base station settings are loaded from `.env` by `piwatcher_base.config.Settings`
 | `PIWATCHER_API_KEY`      | Bearer token required for camera API calls                         | Required                                       |
 | `DATABASE_URL`           | Async SQLAlchemy database URL                                      | Required                                       |
 | `FRAME_STORAGE_PATH`     | Root directory for retained JPEG frames                            | `/home/bostdiek/piwatcher/frames`              |
+| `DISPLAY_TIMEZONE`       | IANA timezone used for dashboard timestamp display                 | Local host timezone                            |
 | `ENABLE_INFERENCE`       | Enables background inference after event upload                    | `false`                                        |
 | `LLAMA_SWAP_URL`         | OpenAI-compatible llama-swap endpoint                              | `http://localhost:8080/v1`                     |
 | `LLAMA_SWAP_MODEL`       | Model name sent to llama-swap                                      | `lfm2.5-vl-450m-q4_0`                          |
@@ -299,7 +322,7 @@ Base station settings are loaded from `.env` by `piwatcher_base.config.Settings`
 | `LLAMA_SWAP_LISTEN`      | Host llama-swap listen address                                     | `127.0.0.1:8080`                               |
 | `LLAMA_SWAP_MODELS_DIR`  | Host directory containing local GGUF model files                   | `/home/bostdiek/piwatcher/models`              |
 | `LLAMA_SWAP_MODEL_FILE`  | Main GGUF model filename expected by llama-swap config             | `LFM2.5-VL-450M-Q4_0.gguf`                     |
-| `LLAMA_SWAP_MMPROJ_FILE` | Multimodal projector GGUF filename expected by llama-swap config   | `lfm2-vl-450m-mmproj.gguf`                     |
+| `LLAMA_SWAP_MMPROJ_FILE` | Multimodal projector GGUF filename expected by llama-swap config   | `mmproj-LFM2.5-VL-450m-Q8_0.gguf`              |
 | `LLAMA_SWAP_MODEL_URL`   | Optional URL downloaded into `LLAMA_SWAP_MODEL_FILE` when missing  | Empty                                          |
 | `LLAMA_SWAP_MMPROJ_URL`  | Optional URL downloaded into `LLAMA_SWAP_MMPROJ_FILE` when missing | Empty                                          |
 | `LLAMA_SWAP_MEDIA_PATH`  | Host media path passed to llama-server for vision requests         | `/home/bostdiek/Downloads`                     |
@@ -345,6 +368,7 @@ Camera settings are loaded from `/home/pi/piwatcher/.env`.
 | `make base-inference-up`       | Alias for explicit local/development inference startup                                                                |
 | `make base-migrate`            | Apply Alembic migrations for the base station database                                                                |
 | `make base-up`                 | Start PostgreSQL, apply migrations, and run the base server. Add `ENABLE_INFERENCE=true` to start local inference too |
+| `make deploy-base`             | Deploy the base app and copy `pi5.env` to the Pi as `.env` when present                                               |
 | `make deploy-camera`           | Generate camera config locally, rsync code/config, run setup, and leave the camera stopped unless `START_CAMERA=true` |
 | `make update-cameras`          | Rsync camera package code and restart camera services                                                                 |
 | `make setup-camera CAM=<host>` | Copy and run the first-time Pi Zero provisioning script                                                               |

@@ -9,6 +9,7 @@ set -euo pipefail
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly SERVICE_SRC="${REPO_ROOT}/deploy/piwatcher-base.service"
+readonly DEFAULT_BASE_ENV_FILE="${REPO_ROOT}/pi5.env"
 readonly DEFAULT_FRAME_STORAGE_PATH="/home/bostdiek/piwatcher/frames"
 readonly DEFAULT_UV_BIN="/home/bostdiek/.local/bin/uv"
 
@@ -28,6 +29,7 @@ Usage: deploy/deploy-base.sh <pi5-host> [pi5-user]
 
 Environment overrides:
   BASE_PROJECT_DIR     Remote repo path. Defaults to /home/<user>/Projects/PiWatcher
+  BASE_ENV_FILE        Local env file copied to remote .env when present. Defaults to pi5.env
   FRAME_STORAGE_PATH   Frame storage directory to create/chown before startup
   UV_BIN               Remote uv executable. Defaults to /home/<user>/.local/bin/uv
   ENABLE_BASE_SERVICE  Defaults to false
@@ -41,6 +43,20 @@ require_command() {
   if ! command -v "${command_name}" >/dev/null 2>&1; then
     err "'${command_name}' is required"
   fi
+}
+
+read_env_value() {
+  local env_file="$1"
+  local key="$2"
+
+  awk -F= -v key="${key}" '
+    $1 == key {
+      value = substr($0, index($0, "=") + 1)
+      gsub(/^"|"$/, "", value)
+      print value
+      exit
+    }
+  ' "${env_file}"
 }
 
 open_ssh_master() {
@@ -93,12 +109,18 @@ main() {
 
   require_command ssh
   require_command rsync
+  require_command scp
 
   [[ -f "${SERVICE_SRC}" ]] || err "Service file not found at ${SERVICE_SRC}"
 
   local remote="${base_user}@${base_host}"
   local project_dir="${BASE_PROJECT_DIR:-/home/${base_user}/Projects/PiWatcher}"
+  local base_env_file="${BASE_ENV_FILE:-${DEFAULT_BASE_ENV_FILE}}"
   local frame_storage_path="${FRAME_STORAGE_PATH:-${DEFAULT_FRAME_STORAGE_PATH}}"
+  if [[ -z "${FRAME_STORAGE_PATH:-}" && -f "${base_env_file}" ]]; then
+    frame_storage_path="$(read_env_value "${base_env_file}" FRAME_STORAGE_PATH)"
+    frame_storage_path="${frame_storage_path:-${DEFAULT_FRAME_STORAGE_PATH}}"
+  fi
   local uv_bin="${UV_BIN:-/home/${base_user}/.local/bin/uv}"
   local tmp_dir
   tmp_dir="$(mktemp -d)"
@@ -137,6 +159,19 @@ main() {
     -e "ssh -4 -o ControlPath=${control_path}" \
     "${REPO_ROOT}/" \
     "${remote}:${project_dir}/"
+
+  if [[ -f "${base_env_file}" ]]; then
+    scp "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" \
+      "${base_env_file}" \
+      "${remote}:${project_dir}/.env"
+    printf "Copied %s to %s:%s/.env\n" \
+      "${base_env_file}" \
+      "${remote}" \
+      "${project_dir}"
+  else
+    printf "No base env file found at %s; keeping remote .env.\n" \
+      "${base_env_file}"
+  fi
 
   ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
     "sudo install -d -o '${base_user}' -g '${base_user}' '${frame_storage_path}'"
