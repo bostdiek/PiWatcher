@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PiWatcher - {% block title %}{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slatepanel: "#111827",
+                        slateedge: "#1f2937",
+                    },
+                },
+            },
+        };
+    </script>
+</head>
+<body class="min-h-screen bg-gray-950 text-gray-100 antialiased">
+    <div class="border-b border-gray-800 bg-gray-900/95">
+        <nav class="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between lg:px-6">
+            <a href="/" class="text-xl font-semibold tracking-tight text-white">PiWatcher</a>
+            <div class="flex flex-wrap items-center gap-2 text-sm text-gray-300">
+                <a href="/events" class="rounded-md px-3 py-2 hover:bg-gray-800 hover:text-white">Events</a>
+                <a href="/health" class="rounded-md px-3 py-2 hover:bg-gray-800 hover:text-white">Camera Health</a>
+                {% if cameras %}
+                <form action="/events" method="get" class="flex items-center gap-2">
+                    <label for="camera_id" class="sr-only">Camera</label>
+                    <select id="camera_id" name="camera_id" class="rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-gray-100">
+                        <option value="">All cameras</option>
+                        {% for camera in cameras %}
+                        <option value="{{ camera }}" {% if camera == selected_camera_id %}selected{% endif %}>{{ camera }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="rounded-md bg-emerald-500 px-3 py-2 font-medium text-gray-950 hover:bg-emerald-400">Filter</button>
+                </form>
+                {% endif %}
+            </div>
+        </nav>
+    </div>
+    <main class="mx-auto max-w-7xl px-4 py-6 lg:px-6">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

@@ -1,0 +1,156 @@
+"""Dashboard route tests."""
+
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from piwatcher_base.models import Camera, Event, Frame, Heartbeat
+
+
+@pytest.mark.asyncio()
+async def test_given_events_when_dashboard_events_requested_then_renders_cards(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    # Arrange
+    frame_path = tmp_path / "frames" / "feeder-cam" / "frame.jpg"
+    frame_path.parent.mkdir(parents=True)
+    frame_path.write_bytes(b"jpeg")
+    event = Event(
+        camera_id="feeder-cam",
+        event_start=datetime.now(UTC),
+        frame_count=1,
+        label="deer",
+        confidence=0.91,
+        battery_pct=84,
+    )
+    event.frames = [Frame(sequence_num=0, file_path=str(frame_path), captured_at=datetime.now(UTC))]
+    db_session.add(event)
+    await db_session.commit()
+
+    # Act
+    response = await client.get("/events")
+
+    # Assert
+    assert response.status_code == 200
+    assert "deer" in response.text
+    assert "feeder-cam" in response.text
+
+
+@pytest.mark.asyncio()
+async def test_given_camera_filter_when_event_partials_requested_then_filters_events(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    # Arrange
+    db_session.add(Event(camera_id="feeder-cam", event_start=datetime.now(UTC), frame_count=1))
+    db_session.add(Event(camera_id="porch-cam", event_start=datetime.now(UTC), frame_count=1))
+    await db_session.commit()
+
+    # Act
+    response = await client.get("/events/partials", params={"camera_id": "porch-cam"})
+
+    # Assert
+    assert response.status_code == 200
+    assert "porch-cam" in response.text
+    assert "feeder-cam" not in response.text
+
+
+@pytest.mark.asyncio()
+async def test_given_event_detail_when_requested_then_renders_classification_json(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    # Arrange
+    event = Event(
+        camera_id="feeder-cam",
+        event_start=datetime.now(UTC),
+        frame_count=1,
+        label="fox",
+        raw_classification={"description": "animal near feeder"},
+    )
+    db_session.add(event)
+    await db_session.commit()
+    await db_session.refresh(event)
+
+    # Act
+    response = await client.get(f"/events/{event.id}")
+
+    # Assert
+    assert response.status_code == 200
+    assert "fox" in response.text
+    assert "animal near feeder" in response.text
+
+
+@pytest.mark.asyncio()
+async def test_given_heartbeats_when_health_requested_then_renders_status_and_chart_data(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    # Arrange
+    db_session.add(
+        Heartbeat(
+            camera_id="feeder-cam",
+            battery_pct=72,
+            created_at=datetime.now(UTC) - timedelta(minutes=5),
+        )
+    )
+    await db_session.commit()
+
+    # Act
+    response = await client.get("/health")
+
+    # Assert
+    assert response.status_code == 200
+    assert "feeder-cam" in response.text
+    assert "Online" in response.text
+
+
+@pytest.mark.asyncio()
+async def test_given_archived_camera_when_health_requested_then_hides_until_requested(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    # Arrange
+    db_session.add(
+        Camera(camera_id="old-cam", display_name="Old Cam", archived_at=datetime.now(UTC))
+    )
+    db_session.add(Heartbeat(camera_id="old-cam", battery_pct=72, created_at=datetime.now(UTC)))
+    await db_session.commit()
+
+    # Act
+    hidden_response = await client.get("/health")
+    archived_response = await client.get("/health", params={"show_archived": "true"})
+
+    # Assert
+    assert hidden_response.status_code == 200
+    assert "old-cam" not in hidden_response.text
+    assert archived_response.status_code == 200
+    assert "old-cam" in archived_response.text
+    assert "Restore camera" in archived_response.text
+
+
+@pytest.mark.asyncio()
+async def test_given_legacy_heartbeat_when_health_requested_then_renders_without_telemetry(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    # Arrange
+    db_session.add(
+        Heartbeat(
+            camera_id="legacy-cam",
+            battery_pct=64,
+            created_at=datetime.now(UTC) - timedelta(minutes=5),
+        )
+    )
+    await db_session.commit()
+
+    # Act
+    response = await client.get("/health")
+
+    # Assert
+    assert response.status_code == 200
+    assert "legacy-cam" in response.text

@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Camera Health{% endblock %}
+
+{% block content %}
+<section class="space-y-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+            <p class="text-sm uppercase tracking-wide text-emerald-300">Camera fleet</p>
+            <h1 class="text-3xl font-semibold text-white">Health</h1>
+        </div>
+        <a href="/health{% if not show_archived %}?show_archived=1{% endif %}" class="self-start rounded-md border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:border-emerald-400 hover:text-white">
+            {% if show_archived %}Hide archived{% else %}Show archived{% endif %}
+        </a>
+    </div>
+
+    <div class="grid gap-4 lg:grid-cols-2">
+        {% for camera in cameras_health %}
+        {% set battery_pct = camera.get("battery_pct") %}
+        {% set wifi_rssi_dbm = camera.get("wifi_rssi_dbm") %}
+        {% set queue_depth = camera.get("queue_depth") %}
+        {% set cpu_temp_c = camera.get("cpu_temp_c") %}
+        {% set disk_free_mb = camera.get("disk_free_mb") %}
+        {% set uptime_seconds = camera.get("uptime_seconds") %}
+        {% set wifi_power_save = camera.get("wifi_power_save") %}
+        <article class="rounded-lg border border-gray-800 bg-gray-900 p-4">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="text-xl font-semibold text-white">{{ camera.display_name }}</h2>
+                    <p class="text-sm text-gray-500">{{ camera.camera_id }}</p>
+                    <p class="text-sm {{ camera.status_class }}">{{ camera.last_seen_display }}</p>
+                </div>
+                <div class="flex flex-col items-end gap-2">
+                    <span class="rounded-full px-3 py-1 text-sm font-medium {{ camera.badge_class }}">{{ camera.status_label }}</span>
+                    {% if camera.archived %}
+                    <span class="rounded-full bg-gray-700 px-3 py-1 text-sm font-medium text-gray-200">Archived</span>
+                    {% endif %}
+                </div>
+            </div>
+            <dl class="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">Battery</dt>
+                    <dd class="text-lg font-semibold text-white">{{ battery_pct if battery_pct is not none else "--" }}%</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">RSSI</dt>
+                    <dd class="text-lg font-semibold text-white">{{ wifi_rssi_dbm if wifi_rssi_dbm is not none else "--" }} dBm</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">Queue</dt>
+                    <dd class="text-lg font-semibold text-white">{{ queue_depth if queue_depth is not none else "--" }}</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">CPU</dt>
+                    <dd class="text-lg font-semibold text-white">{{ "%.1f"|format(cpu_temp_c) if cpu_temp_c is not none else "--" }} C</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">Disk free</dt>
+                    <dd class="text-lg font-semibold text-white">{{ disk_free_mb if disk_free_mb is not none else "--" }} MB</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">Uptime</dt>
+                    <dd class="text-lg font-semibold text-white">{{ uptime_seconds if uptime_seconds is not none else "--" }} s</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">Wi-Fi save</dt>
+                    <dd class="text-lg font-semibold text-white">{% if wifi_power_save is none %}--{% elif wifi_power_save %}On{% else %}Off{% endif %}</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">IP</dt>
+                    <dd class="truncate text-lg font-semibold text-white">{{ camera.get("ip_address") or "--" }}</dd>
+                </div>
+            </dl>
+            <div class="mt-5 grid gap-4 sm:grid-cols-2">
+                <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <canvas id="battery-chart-{{ loop.index }}" aria-label="Battery history for {{ camera.camera_id }}"></canvas>
+                </div>
+                <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <canvas id="wifi-chart-{{ loop.index }}" aria-label="Wi-Fi signal history for {{ camera.camera_id }}"></canvas>
+                </div>
+                <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <canvas id="queue-chart-{{ loop.index }}" aria-label="Queue depth history for {{ camera.camera_id }}"></canvas>
+                </div>
+                <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <canvas id="temperature-chart-{{ loop.index }}" aria-label="CPU temperature history for {{ camera.camera_id }}"></canvas>
+                </div>
+            </div>
+            <form action="/health/{% if camera.archived %}unarchive{% else %}archive{% endif %}" method="post" class="mt-5 flex justify-end">
+                <input type="hidden" name="camera_id" value="{{ camera.camera_id }}">
+                <button type="submit" class="rounded-md border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:border-emerald-400 hover:text-white">
+                    {% if camera.archived %}Restore camera{% else %}Archive camera{% endif %}
+                </button>
+            </form>
+        </article>
+        {% else %}
+        <div class="rounded-lg border border-gray-800 bg-gray-900 p-8 text-center text-gray-400">No heartbeat data yet.</div>
+        {% endfor %}
+    </div>
+</section>
+
+<script>
+    const healthCharts = {{ chart_data_json | safe }};
+    const metricConfig = {
+        battery: { suffix: "%", color: "#34d399", min: 0, max: 100 },
+        wifi: { suffix: " dBm", color: "#60a5fa" },
+        queue: { suffix: " queued", color: "#f59e0b", min: 0 },
+        temperature: { suffix: " C", color: "#f87171", min: 0 },
+    };
+
+    function renderMetricChart(camera, index, metricName) {
+        const element = document.getElementById(`${metricName}-chart-${index + 1}`);
+        const metric = camera.metrics[metricName];
+        if (!element || !metric || metric.values.length === 0) return;
+        const config = metricConfig[metricName];
+        new Chart(element, {
+            type: "line",
+            data: {
+                labels: metric.labels,
+                datasets: [{
+                    data: metric.values,
+                    borderColor: config.color,
+                    backgroundColor: `${config.color}22`,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    fill: true,
+                    tension: 0.35,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => `${context.parsed.y}${config.suffix}`,
+                        },
+                    },
+                },
+                scales: {
+                    x: { display: false },
+                    y: { display: false, min: config.min, max: config.max },
+                },
+            },
+        });
+    }
+
+    healthCharts.forEach((camera, index) => {
+        ["battery", "wifi", "queue", "temperature"].forEach((metricName) => renderMetricChart(camera, index, metricName));
+    });
+</script>
+{% endblock %}

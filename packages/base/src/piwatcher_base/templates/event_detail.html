@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Event {{ event.id }}{% endblock %}
+
+{% block content %}
+<section class="space-y-6">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+            <a href="/events" class="text-sm text-emerald-300 hover:text-emerald-200">Back to events</a>
+            <h1 class="mt-2 text-3xl font-semibold text-white">Event {{ event.id }}</h1>
+            <p class="text-gray-400">{{ event.camera_id }} · {{ event.created_at_display }}</p>
+        </div>
+        {% if event.confidence is not none %}
+        <span class="w-fit rounded-full bg-emerald-400/10 px-3 py-2 text-sm font-medium text-emerald-300">{{ "%.0f"|format(event.confidence * 100) }}% confidence</span>
+        {% endif %}
+    </div>
+
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+        <div class="rounded-lg border border-gray-800 bg-gray-900 p-4">
+            <h2 class="mb-4 text-lg font-semibold text-white">Frames</h2>
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {% for frame in event.frames %}
+                <figure class="overflow-hidden rounded-md border border-gray-800 bg-gray-950">
+                    <img src="{{ frame.url }}" alt="Frame {{ frame.sequence_num }}" class="aspect-square w-full object-cover">
+                    <figcaption class="px-3 py-2 text-xs text-gray-400">Frame {{ frame.sequence_num }} · {{ frame.captured_at_display }}</figcaption>
+                </figure>
+                {% else %}
+                <p class="text-gray-400">No frames recorded for this event.</p>
+                {% endfor %}
+            </div>
+        </div>
+
+        <aside class="space-y-4">
+            <div class="rounded-lg border border-gray-800 bg-gray-900 p-4">
+                <h2 class="text-lg font-semibold text-white">Classification</h2>
+                <dl class="mt-4 space-y-3 text-sm">
+                    <div class="flex justify-between gap-4"><dt class="text-gray-400">Label</dt><dd class="text-white">{{ event.label or "Unclassified" }}</dd></div>
+                    <div class="flex justify-between gap-4"><dt class="text-gray-400">Frames</dt><dd class="text-white">{{ event.frame_count }}</dd></div>
+                    <div class="flex justify-between gap-4"><dt class="text-gray-400">Battery</dt><dd class="text-white">{{ event.battery_pct if event.battery_pct is not none else "--" }}%</dd></div>
+                    <div class="flex justify-between gap-4"><dt class="text-gray-400">Started</dt><dd class="text-white">{{ event.event_start_display }}</dd></div>
+                    <div class="flex justify-between gap-4"><dt class="text-gray-400">Ended</dt><dd class="text-white">{{ event.event_end_display or "--" }}</dd></div>
+                </dl>
+            </div>
+            <div class="rounded-lg border border-gray-800 bg-gray-900 p-4">
+                <h2 class="text-lg font-semibold text-white">Raw JSON</h2>
+                <pre class="mt-4 max-h-96 overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-300">{{ event.raw_classification_json }}</pre>
+            </div>
+        </aside>
+    </div>
+</section>
+{% endblock %}
