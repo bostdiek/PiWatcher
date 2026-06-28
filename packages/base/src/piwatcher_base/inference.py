@@ -90,17 +90,9 @@ def classification_prompt_text() -> str:
     """Return the frame-classification instruction sent to the local model."""
 
     return (
-        "Classify the main visible subject in this security-camera frame. "
-        "Choose exactly one label from the provided schema. "
-        "Prefer human for any visible person or body part, even if the person is partially "
-        "shown, backlit, or indoors. "
-        "Use vehicle only for clear vehicles, empty when nothing relevant is visible, "
-        "and unknown when the scene is ambiguous. "
-        "Do not guess a wildlife species from shadows, furniture, windows, reflections, "
-        "or unclear shapes. "
-        "If the frame appears to be indoors, do not label it as wildlife unless an animal "
-        "is clearly visible. "
-        "Return only JSON matching the schema with no Markdown or code fences."
+        "What is the main thing visible in this image? "
+        "Choose the closest label from the schema and describe only what you actually see. "
+        "Use unknown if the subject is unclear and empty if nothing relevant is visible."
     )
 
 

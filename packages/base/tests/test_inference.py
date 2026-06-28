@@ -89,14 +89,15 @@ def test_given_response_format_json_schema_when_built_then_contains_strict_schem
     assert schema["properties"]["label"]["enum"][-1] == "empty"
 
 
-def test_given_classification_prompt_when_built_then_discourages_wildlife_guessing() -> None:
+def test_given_classification_prompt_when_built_then_keeps_guidance_minimal() -> None:
     # Act
     prompt = classification_prompt_text()
 
     # Assert
-    assert "Prefer human" in prompt
-    assert "do not label it as wildlife unless an animal is clearly visible" in prompt
-    assert "Do not guess a wildlife species" in prompt
+    assert prompt.startswith("What is the main thing visible in this image?")
+    assert "describe only what you actually see" in prompt
+    assert "Use unknown if the subject is unclear" in prompt
+    assert "empty if nothing relevant is visible" in prompt
 
 
 @pytest.mark.asyncio()
@@ -232,7 +233,9 @@ async def test_given_successful_inference_when_classify_event_then_logs_start_an
     monkeypatch.setattr(settings, "inference_gap_seconds", 0)
     monkeypatch.setattr(inference, "get_settings", lambda: settings)
     monkeypatch.setattr(
-        inference, "wait_for_safe_temperature", lambda _settings: inference.asyncio.sleep(0)
+        inference,
+        "wait_for_safe_temperature",
+        lambda _settings: inference.asyncio.sleep(0),
     )
 
     async def classify_stub(_self, _frame_path):
@@ -244,7 +247,9 @@ async def test_given_successful_inference_when_classify_event_then_logs_start_an
         classify_stub,
     )
     monkeypatch.setattr(
-        inference, "notify_detection", lambda *args, **kwargs: inference.asyncio.sleep(0)
+        inference,
+        "notify_detection",
+        lambda *args, **kwargs: inference.asyncio.sleep(0),
     )
     caplog.set_level("INFO", logger="piwatcher_base.inference")
 
