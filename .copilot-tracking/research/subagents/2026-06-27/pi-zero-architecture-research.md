@@ -172,13 +172,13 @@ while True:
     time.sleep(0.3)  # Camera warmup
     frame = picam2.capture_array("lores")[:h, :w]
     picam2.stop()
-    
+
     if motion_detected(frame, prev):
         picam2.start()
         time.sleep(0.3)
         capture_and_send()
         picam2.stop()
-    
+
     prev = frame
     time.sleep(poll_interval)  # e.g., 5 seconds
 ```
@@ -485,26 +485,26 @@ MOTION_CONFIG = {
     # Pixel change threshold (MSE between frames)
     # Lower = more sensitive, Higher = less sensitive
     "threshold": 7.0,  # Default from picamera2 example
-    
+
     # Minimum number of changed pixels (percentage of frame)
     # Filters out noise — requires contiguous changed area
     "min_changed_pct": 2.0,  # 2% of pixels must change
-    
+
     # Cooldown between motion events (seconds)
     # Prevents rapid-fire captures of the same animal
     "cooldown_seconds": 5.0,
-    
+
     # Region of interest (ROI) — normalized coordinates
     # Ignore motion outside this region
     "roi": {
         "x": 0.0, "y": 0.0,  # Top-left
         "w": 1.0, "h": 1.0   # Full frame (default)
     },
-    
+
     # Number of consecutive motion frames required
     # Reduces false positives from single-frame noise
     "consecutive_frames": 2,
-    
+
     # Night mode (higher threshold due to noise)
     "night_threshold_multiplier": 1.5,
 }
@@ -671,12 +671,12 @@ def post_with_retry(jpeg_bytes: bytes, server_url: str, max_retries: int = 3) ->
                 return True
         except requests.exceptions.RequestException:
             pass
-        
+
         if attempt < max_retries - 1:
             # Exponential backoff with jitter
             delay = (2 ** attempt) + random.uniform(0, 1)
             time.sleep(delay)
-    
+
     return False
 ```
 
@@ -693,11 +693,11 @@ def queue_frame(jpeg_bytes: bytes, metadata: dict):
     """Save frame to disk when network is unavailable"""
     QUEUE_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    
+
     # Save JPEG
     frame_path = QUEUE_DIR / f"{timestamp}.jpg"
     frame_path.write_bytes(jpeg_bytes)
-    
+
     # Save metadata
     meta_path = QUEUE_DIR / f"{timestamp}.json"
     meta_path.write_text(json.dumps(metadata))
@@ -708,7 +708,7 @@ def flush_queue(server_url: str) -> int:
     for frame_path in sorted(QUEUE_DIR.glob("*.jpg")):
         meta_path = frame_path.with_suffix(".json")
         jpeg_bytes = frame_path.read_bytes()
-        
+
         if post_frame(jpeg_bytes, server_url):
             frame_path.unlink()
             if meta_path.exists():
@@ -728,22 +728,22 @@ def handle_motion_event(picam2, server_url: str, server_host: str):
     jpeg_buffer = io.BytesIO()
     picam2.capture_file(jpeg_buffer, format="jpeg")
     jpeg_bytes = jpeg_buffer.getvalue()
-    
+
     # 2. Enable WiFi
     wifi_on()
-    
+
     # 3. Wait for connectivity
     if wait_for_connectivity(server_host, port=8000, timeout=10):
         # 4. Flush any queued frames first
         flush_queue(server_url)
-        
+
         # 5. Upload current frame
         if not post_with_retry(jpeg_bytes, server_url):
             queue_frame(jpeg_bytes, {"timestamp": time.time()})
     else:
         # Network unavailable — queue to disk
         queue_frame(jpeg_bytes, {"timestamp": time.time()})
-    
+
     # 6. Disable WiFi
     wifi_off()
 ```

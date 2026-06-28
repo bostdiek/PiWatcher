@@ -454,7 +454,7 @@ async def classify_event(event_id: str):
 - FastAPI's `BackgroundTasks` or `asyncio.Queue` is sufficient
 - If needed later, can upgrade to `arq` (async Redis queue) which is lighter than Celery
 
-**Recommended approach**: 
+**Recommended approach**:
 - Use `BackgroundTasks` for fire-and-forget classification after upload
 - Use `asyncio.Semaphore` to limit concurrent inference calls (since the model can only handle one at a time on Pi 5)
 - Return immediately to the camera with a 201 + event_id

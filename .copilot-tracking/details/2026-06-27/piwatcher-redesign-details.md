@@ -419,13 +419,13 @@ def detect_motion(
     min_changed_pct: float = 2.0,
 ) -> MotionResult:
     """Compare two grayscale lores frames for motion.
-    
+
     Args:
         current_frame: Current lores frame (H, W) uint8
         previous_frame: Previous lores frame (H, W) uint8
         threshold: Per-pixel difference threshold
         min_changed_pct: Minimum percentage of changed pixels to trigger
-    
+
     Returns:
         MotionResult with detection status and metrics
     """
@@ -434,7 +434,7 @@ def detect_motion(
     total_pixels = diff.size
     changed_pct = (changed_pixels / total_pixels) * 100.0
     mean_diff = float(np.mean(diff))
-    
+
     return MotionResult(
         detected=changed_pct >= min_changed_pct,
         changed_pct=changed_pct,
@@ -482,7 +482,7 @@ class CaptureSession:
     start_time: float = 0.0
     last_motion_time: float = 0.0
     cooldown_start: float = 0.0
-    
+
     # Config
     min_duration: float = 60.0
     cooldown_duration: float = 5.0
@@ -546,7 +546,7 @@ def upload_event(
     battery_pct: int | None = None,
 ) -> bool:
     """Upload captured frames as multipart POST to base station.
-    
+
     Returns True on success, False on failure (frames kept for retry).
     """
     ...
@@ -585,7 +585,7 @@ PISUGAR_I2C_ADDR = 0x57  # PiSugar S I2C address
 
 def get_battery_level() -> int | None:
     """Read battery percentage from PiSugar S via I2C.
-    
+
     Returns percentage (0-100) or None if PiSugar not available.
     """
     try:
@@ -629,15 +629,15 @@ class HeartbeatManager:
         self.api_key = api_key
         self.camera_id = camera_id
         self.last_sent: float = 0.0
-    
+
     def is_due(self) -> bool:
         """Check if heartbeat interval has elapsed."""
         return (time.time() - self.last_sent) >= self.interval
-    
+
     def send(self, battery_pct: int | None = None) -> bool:
         """Send heartbeat to base station. Called when WiFi is active."""
         ...
-    
+
     def piggyback(self, battery_pct: int | None = None) -> None:
         """Record that heartbeat was sent alongside an event upload."""
         self.last_sent = time.time()
@@ -683,10 +683,10 @@ def main() -> None:
     """Main watcher loop."""
     config = load_config()
     setup_logging(config)
-    
+
     # picamera2 setup (only import at runtime — not available on Mac)
     from picamera2 import Picamera2
-    
+
     picam = Picamera2()
     # Configure dual-stream: lores for motion, main for capture
     camera_config = picam.create_still_configuration(
@@ -695,7 +695,7 @@ def main() -> None:
     )
     picam.configure(camera_config)
     picam.start()
-    
+
     session = CaptureSession(
         min_duration=config.capture_min_duration,
         cooldown_duration=config.cooldown_seconds,
@@ -707,7 +707,7 @@ def main() -> None:
         api_key=config.api_key,
         camera_id=config.camera_id,
     )
-    
+
     previous_frame = None
     # Main loop: check motion, manage state, handle heartbeat
     ...
@@ -884,7 +884,7 @@ class Base(DeclarativeBase):
 
 class Event(Base):
     __tablename__ = "events"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     camera_id: Mapped[str] = mapped_column(String(50), index=True)
     event_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -892,29 +892,29 @@ class Event(Base):
     frame_count: Mapped[int] = mapped_column(Integer)
     battery_pct: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    
+
     # Classification results
     label: Mapped[str | None] = mapped_column(String(50))
     confidence: Mapped[float | None] = mapped_column(Float)
     raw_classification: Mapped[dict | None] = mapped_column(JSONB)
     classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    
+
     frames: Mapped[list["Frame"]] = relationship(back_populates="event")
 
 class Frame(Base):
     __tablename__ = "frames"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
     sequence_num: Mapped[int] = mapped_column(Integer)
     file_path: Mapped[str] = mapped_column(Text)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    
+
     event: Mapped["Event"] = relationship(back_populates="frames")
 
 class Heartbeat(Base):
     __tablename__ = "heartbeats"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     camera_id: Mapped[str] = mapped_column(String(50), index=True)
     battery_pct: Mapped[int | None] = mapped_column(Integer)
@@ -1077,13 +1077,13 @@ async def store_frames(
     storage_path: Path,
 ) -> list[Path]:
     """Store uploaded frames to NVMe organized as YYYY/MM/DD/camera_id/event_timestamp/.
-    
+
     Returns list of stored file paths.
     """
     date_dir = storage_path / event_start.strftime("%Y/%m/%d") / camera_id
     event_dir = date_dir / event_start.strftime("%H%M%S")
     event_dir.mkdir(parents=True, exist_ok=True)
-    
+
     paths = []
     for i, frame in enumerate(frames):
         dest = event_dir / f"frame_{i:04d}.jpg"
@@ -1136,7 +1136,7 @@ def get_cpu_temp() -> float:
 
 async def classify_event_background(event_id: int, frame_paths: list[Path]) -> None:
     """Classify sampled frames with thermal management.
-    
+
     Samples 5 frames evenly spaced, waits between inference calls,
     pauses if temperature exceeds threshold.
     """

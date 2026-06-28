@@ -14,16 +14,16 @@ repos:
     hooks:
       - id: ruff-check
         name: ruff check
-        entry: uv run ruff check --fix
+        entry: uv run --no-sync ruff check --fix
         language: system
         types_or: [python, pyi]
       - id: ruff-format
         name: ruff format
-        entry: uv run ruff format
+        entry: uv run --no-sync ruff format
         language: system
         types_or: [python, pyi]
       - id: ty-check
         name: ty check
-        entry: uv run ty check
+        entry: uv run --no-sync ty check
         language: system
         pass_filenames: false

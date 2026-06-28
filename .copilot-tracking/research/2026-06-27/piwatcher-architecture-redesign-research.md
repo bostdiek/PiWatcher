@@ -117,10 +117,10 @@ The Liquid AI model is specifically designed for edge deployment:
 ### 3. Adaptive Capture State Machine
 
 ```
-IDLE (WiFi OFF, lores motion detection) 
+IDLE (WiFi OFF, lores motion detection)
   → motion detected →
 CAPTURING (2 fps main @ 1024x1024, WiFi OFF, motion monitoring continues)
-  → motion stops → 
+  → motion stops →
 COOLDOWN (still capturing 2 fps, 5s countdown, resets if motion resumes)
   → 5s elapsed AND total >= 60s →
 TRANSFERRING (WiFi ON, batch upload all frames, WiFi OFF)
