@@ -64,6 +64,31 @@ Gaps and differences identified between research findings and the implementation
   * Plan implements: 1024x1024 @ 2fps consistently across all steps (config defaults, power budget assumptions, transfer calculations)
   * Rationale: Research was updated mid-session. Key Discoveries and Power Budget represent the final agreed values. Scenario 1 diagram and Alternatives table are stale pre-decision text within the research document itself. Plan correctly follows the final conclusion.
 
+* DD-05: Phase 0 now updates pre-commit tooling before project scaffold
+  * Plan originally specified: Commit planning artifacts, then remove the legacy RTSP/Poetry architecture
+  * Implementation differs: Phase 0 also replaces black/isort/flake8 hooks with uv-run ruff and ty hooks
+  * Rationale: User requested pre-commit be updated as part of Phase 0 so the clean-slate repo stops enforcing legacy formatting and linting tools before new code is scaffolded.
+
+* DD-06: Root project depends on workspace packages for import validation
+  * Plan specifies: Root `pyproject.toml` defines the uv workspace members
+  * Implementation differs: Root `pyproject.toml` also declares `piwatcher-camera` and `piwatcher-base` dependencies with `[tool.uv.sources]` pointing to the workspace
+  * Rationale: `uv sync` resolved the workspace without these dependencies, but the required root import validation could not import either package until they were installed into the root environment.
+
+* DD-07: Base package adds `aiosqlite` for hardware-free async tests
+  * Plan specifies: Server tests should use SQLite in-memory for test DBs
+  * Implementation differs: `aiosqlite` was added as a base package dependency to support SQLAlchemy async SQLite tests
+  * Rationale: Async SQLAlchemy requires an async SQLite driver for the planned no-PostgreSQL test strategy.
+
+* DD-08: Dashboard serves frame files with a request-time route
+  * Plan specifies: FastAPI app mounts static files for dashboard assets/frame access
+  * Implementation differs: Dashboard uses `/frames/{frame_path:path}` handled at request time instead of mounting `StaticFiles` at import time
+  * Rationale: Static mounting required environment-backed settings during module import, which broke the app import validation before `.env` existed. Request-time serving preserves importability and still gates paths to the configured frame storage directory.
+
+* DD-09: Removed test package markers to avoid duplicate top-level `tests` packages
+  * Plan specifies: Add `packages/base/tests/__init__.py` and `packages/camera/tests/__init__.py` during scaffold
+  * Implementation differs: Phase 6 removed those files and configured pytest import mode in `pyproject.toml`
+  * Rationale: Keeping both files made pytest collect both package test trees as the same top-level `tests` package, causing import collisions during full validation.
+
 ## Implementation Paths Considered
 
 ### Selected: uv Workspace with rsync Deployment
@@ -125,3 +150,27 @@ Items identified during planning that fall outside current scope.
 * WI-08: Pi 5 fan repair/replacement — Diagnose and fix thermal management hardware (high priority, non-software)
   * Source: Research "Potential Next Research" section
   * Dependency: None (hardware task)
+
+* WI-09: Pi Zero W hardware smoke test — Validate `picamera2`, rfkill sudoers, PiSugar I2C, and actual capture loop on device (high priority)
+  * Source: Phase 2 validation report
+  * Dependency: Phase 2 camera package must be deployed to a Pi Zero W
+
+* WI-10: PostgreSQL-backed Alembic validation — Run upgrade/downgrade against a real PostgreSQL instance (medium priority)
+  * Source: Phase 3 validation report
+  * Dependency: Phase 5 Docker Compose PostgreSQL setup
+
+* WI-11: Browser-level dashboard smoke test — Verify CDN-loaded htmx/Chart.js behavior and visual layout with sample images (low priority)
+  * Source: Phase 4 validation report
+  * Dependency: Phase 4 dashboard and sample frame data
+
+* WI-12: Base station installation Makefile targets — Add repeatable targets to install Pi 5 systemd units and enable the TTL timer (low priority)
+  * Source: Phase 5 validation report
+  * Dependency: Phase 5 deployment files
+
+* WI-13: Production PostgreSQL credential handling — Move default Compose credentials into environment-specific overrides before field deployment (medium priority)
+  * Source: Phase 5 validation report
+  * Dependency: Phase 5 Docker Compose setup
+
+* WI-14: CI-safe camera deployment dry-run target — Add a Makefile target that expands rsync/ssh commands without connecting (low priority)
+  * Source: Phase 6 validation report
+  * Dependency: Existing Makefile deployment target

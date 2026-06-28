@@ -53,132 +53,135 @@ Redesign PiWatcher as a motion-triggered wildlife camera system with Pi Zero W b
 
 ## Implementation Checklist
 
-### [ ] Implementation Phase 0: Commit & Clear Repo
+### [x] Implementation Phase 0: Commit & Clear Repo
 
 <!-- parallelizable: false -->
 
-* [ ] Step 0.1: Commit planning artifacts
+* [x] Step 0.1: Commit planning artifacts
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 15-30)
   * Commit .copilot-tracking/ directory with message: "docs: add architecture research and implementation plan"
-* [ ] Step 0.2: Remove old code and commit
+* [x] Step 0.2: Remove old code and commit
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 32-55)
   * Remove: piwatcher/, piwatcher.egg-info/, test/, tmp/, generate_diffs.sh, old pyproject.toml
   * Keep: LICENSE, README.md, .copilot-tracking/
   * Commit with message: "chore: remove legacy RTSP architecture for clean slate redesign"
+* [x] Step 0.3: Update pre-commit hooks for redesign tooling
+  * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 57-75)
+  * Replace legacy black/isort/flake8 hooks with uv-run ruff and ty hooks
 
-### [ ] Implementation Phase 1: Project Scaffold
+### [x] Implementation Phase 1: Project Scaffold
 
 <!-- parallelizable: false -->
 
-* [ ] Step 1.1: Create uv workspace root pyproject.toml
+* [x] Step 1.1: Create uv workspace root pyproject.toml
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 60-100)
-* [ ] Step 1.2: Create packages/camera/ package structure
+* [x] Step 1.2: Create packages/camera/ package structure
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 102-140)
-* [ ] Step 1.3: Create packages/base/ package structure
+* [x] Step 1.3: Create packages/base/ package structure
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 142-190)
-* [ ] Step 1.4: Create Makefile with deployment targets
+* [x] Step 1.4: Create Makefile with deployment targets
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 192-240)
-* [ ] Step 1.5: Create configuration files (.env.example, .gitignore, ruff.toml)
+* [x] Step 1.5: Create configuration files (.env.example, .gitignore, ruff.toml)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 242-295)
-* [ ] Step 1.6: Validate scaffold
+* [x] Step 1.6: Validate scaffold
   * Run `uv sync` to verify workspace resolves
   * Run `ruff check .` to verify config
 
-### [ ] Implementation Phase 2: Camera Package
+### [x] Implementation Phase 2: Camera Package
 
 <!-- parallelizable: true -->
 
-* [ ] Step 2.1: Implement motion detection module (motion.py)
+* [x] Step 2.1: Implement motion detection module (motion.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 280-340)
-* [ ] Step 2.2: Implement capture state machine (capture.py)
+* [x] Step 2.2: Implement capture state machine (capture.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 342-410)
-* [ ] Step 2.3: Implement network transfer module (transfer.py)
+* [x] Step 2.3: Implement network transfer module (transfer.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 412-470)
-* [ ] Step 2.4: Implement battery monitor (battery.py)
+* [x] Step 2.4: Implement battery monitor (battery.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 472-520)
-* [ ] Step 2.5: Implement heartbeat module (heartbeat.py)
+* [x] Step 2.5: Implement heartbeat module (heartbeat.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 522-560)
-* [ ] Step 2.6: Implement main watcher loop (watcher.py)
+* [x] Step 2.6: Implement main watcher loop (watcher.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 562-620)
-* [ ] Step 2.7: Implement config loading (config.py)
+* [x] Step 2.7: Implement config loading (config.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 622-670)
-* [ ] Step 2.8: Create systemd unit file and setup script
+* [x] Step 2.8: Create systemd unit file and setup script
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 672-720)
-* [ ] Step 2.9: Write camera package tests
+* [x] Step 2.9: Write camera package tests
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 722-760)
 
-### [ ] Implementation Phase 3: Base Station Server
+### [x] Implementation Phase 3: Base Station Server
 
 <!-- parallelizable: true -->
 
-* [ ] Step 3.1: Database schema + SQLAlchemy models (models.py)
+* [x] Step 3.1: Database schema + SQLAlchemy models (models.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 770-840)
-* [ ] Step 3.2: Alembic setup + initial migration
+* [x] Step 3.2: Alembic setup + initial migration
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 842-880)
-* [ ] Step 3.3: FastAPI app with auth middleware (main.py)
+* [x] Step 3.3: FastAPI app with auth middleware (main.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 882-940)
-* [ ] Step 3.4: Event ingest endpoint (routes/events.py)
+* [x] Step 3.4: Event ingest endpoint (routes/events.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 942-1000)
-* [ ] Step 3.5: Frame storage service (storage.py)
+* [x] Step 3.5: Frame storage service (storage.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1002-1040)
-* [ ] Step 3.6: Inference pipeline with thermal management (inference.py)
+* [x] Step 3.6: Inference pipeline with thermal management (inference.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1042-1120)
-* [ ] Step 3.7: Heartbeat endpoint + TTL cleanup (routes/heartbeat.py)
+* [x] Step 3.7: Heartbeat endpoint + TTL cleanup (routes/heartbeat.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1122-1170)
-* [ ] Step 3.8: Push notifications via ntfy.sh (notifications.py)
+* [x] Step 3.8: Push notifications via ntfy.sh (notifications.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1172-1210)
-* [ ] Step 3.9: Server config and DB connection (config.py, db.py)
+* [x] Step 3.9: Server config and DB connection (config.py, db.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1212-1260)
-* [ ] Step 3.10: Write server tests
+* [x] Step 3.10: Write server tests
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1262-1310)
 
-### [ ] Implementation Phase 4: Dashboard
+### [x] Implementation Phase 4: Dashboard
 
 <!-- parallelizable: false -->
 
-* [ ] Step 4.1: Base template with TailwindCSS + htmx (base.html)
+* [x] Step 4.1: Base template with TailwindCSS + htmx (base.html)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1320-1370)
-* [ ] Step 4.2: Events list page with real-time updates (events.html)
+* [x] Step 4.2: Events list page with real-time updates (events.html)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1372-1420)
-* [ ] Step 4.3: Event detail page with frame gallery (event_detail.html)
+* [x] Step 4.3: Event detail page with frame gallery (event_detail.html)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1422-1460)
-* [ ] Step 4.4: Camera health page with battery sparklines (health.html)
+* [x] Step 4.4: Camera health page with battery sparklines (health.html)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1462-1510)
-* [ ] Step 4.5: Dashboard route handlers (routes/dashboard.py)
+* [x] Step 4.5: Dashboard route handlers (routes/dashboard.py)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1512-1560)
-* [ ] Step 4.6: WebSocket for real-time event stream
+* [x] Step 4.6: WebSocket for real-time event stream
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1562-1600)
 
-### [ ] Implementation Phase 5: Deployment & Operations
+### [x] Implementation Phase 5: Deployment & Operations
 
 <!-- parallelizable: false -->
 
-* [ ] Step 5.1: Pi 5 systemd service for piwatcher-base
+* [x] Step 5.1: Pi 5 systemd service for piwatcher-base
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1610-1650)
-* [ ] Step 5.2: Docker Compose for PostgreSQL
+* [x] Step 5.2: Docker Compose for PostgreSQL
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1652-1690)
-* [ ] Step 5.3: Pi Zero setup script (deploy/setup-camera.sh)
+* [x] Step 5.3: Pi Zero setup script (deploy/setup-camera.sh)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1692-1740)
-* [ ] Step 5.4: Heartbeat TTL cron job (pg_cron or systemd timer)
+* [x] Step 5.4: Heartbeat TTL cron job (pg_cron or systemd timer)
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1742-1770)
-* [ ] Step 5.5: Update README.md with setup instructions
+* [x] Step 5.5: Update README.md with setup instructions
   * Details: .copilot-tracking/details/2026-06-27/piwatcher-redesign-details.md (Lines 1772-1810)
 
-### [ ] Implementation Phase 6: Validation
+### [x] Implementation Phase 6: Validation
 
 <!-- parallelizable: false -->
 
-* [ ] Step 6.1: Run full project validation
+* [x] Step 6.1: Run full project validation
   * Execute `uv run ruff check .` for linting
   * Execute `uv run ty check` for type checking
   * Execute `uv run pytest` for all tests
-* [ ] Step 6.2: Fix minor validation issues
+* [x] Step 6.2: Fix minor validation issues
   * Iterate on lint errors, type errors, and test failures
   * Apply fixes directly when corrections are straightforward
-* [ ] Step 6.3: Verify Makefile targets work
+* [x] Step 6.3: Verify Makefile targets work
   * Test `make lint`, `make typecheck`, `make test`
   * Verify `make update-cameras` rsync syntax (dry-run mode)
-* [ ] Step 6.4: Report blocking issues
+* [x] Step 6.4: Report blocking issues
   * Document issues requiring Pi hardware for testing
   * Provide user with deployment testing steps
 

@@ -61,6 +61,30 @@ Success criteria:
 Dependencies:
 * Step 0.1 (planning artifacts committed first)
 
+### Step 0.3: Update pre-commit hooks for redesign tooling
+
+Replace the old Python formatting and linting hooks with the redesign tooling used by the uv workspace.
+
+Remove:
+* black hook
+* isort hook
+* flake8 hook
+
+Add:
+* ruff check via `uv run ruff check --fix`
+* ruff format via `uv run ruff format`
+* ty type checking via `uv run ty check`
+
+Files:
+* .pre-commit-config.yaml - Development hook configuration
+
+Success criteria:
+* `pre-commit validate-config` passes
+* `.pre-commit-config.yaml` validates with the `check-yaml` hook
+
+Dependencies:
+* Step 0.2 (legacy Poetry tooling removed first)
+
 ## Implementation Phase 1: Project Scaffold
 
 <!-- parallelizable: false -->
