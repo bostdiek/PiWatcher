@@ -1,5 +1,6 @@
 """LAN dashboard HTML routes."""
 
+import asyncio
 import json
 import logging
 from datetime import UTC, datetime, timedelta, tzinfo
@@ -29,6 +30,8 @@ templates = Jinja2Templates(directory=TEMPLATE_DIR)
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 CameraIdForm = Annotated[str, Form(...)]
+LOG_LOOKBACK_MINUTES = 15
+LOG_UNITS = ("piwatcher-base.service", "piwatcher-inference.service")
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -122,6 +125,21 @@ async def health_page(
             "chart_data_json": json.dumps(chart_data),
             "selected_camera_id": None,
             "show_archived": show_archived,
+        },
+    )
+
+
+@router.get("/logs", response_class=HTMLResponse)
+async def logs_page(request: Request, session: DbSession) -> HTMLResponse:
+    """Render recent base-station runtime logs."""
+
+    return templates.TemplateResponse(
+        request,
+        "logs.html",
+        {
+            "cameras": await fetch_camera_ids(session),
+            "selected_camera_id": None,
+            "log_view": await read_recent_service_logs(),
         },
     )
 
@@ -305,11 +323,84 @@ def metric_series(heartbeats: list[Heartbeat], attribute: str) -> dict[str, obje
     }
 
 
+async def read_recent_service_logs(
+    units: tuple[str, ...] = LOG_UNITS,
+    lookback_minutes: int = LOG_LOOKBACK_MINUTES,
+) -> dict[str, object]:
+    """Return recent journal entries for dashboard troubleshooting."""
+
+    command = ["journalctl"]
+    for unit in units:
+        command.extend(["-u", unit])
+    command.extend(
+        [
+            "--since",
+            f"{lookback_minutes} minutes ago",
+            "--no-pager",
+            "-o",
+            "short-iso",
+        ]
+    )
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        return format_log_view(
+            lines=[],
+            units=units,
+            lookback_minutes=lookback_minutes,
+            error_message="journalctl is not available on this host.",
+        )
+
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        error_message = stderr.decode("utf-8", errors="replace").strip()
+        if not error_message:
+            error_message = "Unable to read recent system logs from the dashboard process."
+        logger.warning("Failed to read recent service logs: %s", error_message)
+        return format_log_view(
+            lines=[],
+            units=units,
+            lookback_minutes=lookback_minutes,
+            error_message=error_message,
+        )
+
+    output = stdout.decode("utf-8", errors="replace").strip()
+    return format_log_view(
+        lines=output.splitlines() if output else [],
+        units=units,
+        lookback_minutes=lookback_minutes,
+    )
+
+
+def format_log_view(
+    *,
+    lines: list[str],
+    units: tuple[str, ...],
+    lookback_minutes: int,
+    error_message: str | None = None,
+) -> dict[str, object]:
+    """Package log metadata for dashboard rendering."""
+
+    return {
+        "lines": lines,
+        "error_message": error_message,
+        "lookback_minutes": lookback_minutes,
+        "units": list(units),
+        "has_entries": bool(lines),
+    }
+
+
 def format_event_summary(event: Event) -> dict[str, Any]:
     """Format event data for event card rendering."""
 
     frames = sorted(event.frames, key=lambda frame: frame.sequence_num)
     thumbnail = frames[0] if frames else None
+    classified_at = normalize_datetime(event.classified_at)
     return {
         "id": event.id,
         "camera_id": event.camera_id,
@@ -317,6 +408,13 @@ def format_event_summary(event: Event) -> dict[str, Any]:
         "battery_pct": event.battery_pct,
         "label": event.label,
         "confidence": event.confidence,
+        "classified_at": classified_at,
+        "classification_status": "Classified" if classified_at else "Pending inference",
+        "classification_status_class": (
+            "bg-emerald-400/10 text-emerald-300"
+            if classified_at
+            else "bg-amber-400/10 text-amber-300"
+        ),
         "created_at_display": format_datetime(event.created_at),
         "thumbnail_url": frame_url(thumbnail) if thumbnail else None,
     }
@@ -395,12 +493,54 @@ def frame_url(frame: Frame) -> str:
     """Return static URL for a stored frame."""
 
     storage_root = get_settings().frame_storage_path.resolve()
-    file_path = Path(frame.file_path).resolve()
+    raw_path = Path(frame.file_path)
+    if not raw_path.is_absolute():
+        relative_path = legacy_relative_frame_path(frame, raw_path)
+        if relative_path is not None:
+            return f"/frames/{relative_path.as_posix()}"
+
+    file_path = raw_path.resolve()
     try:
         relative_path = file_path.relative_to(storage_root)
     except ValueError:
-        relative_path = Path(file_path.name)
+        relative_path = infer_storage_relative_frame_path(raw_path) or Path(file_path.name)
     return f"/frames/{relative_path.as_posix()}"
+
+
+def legacy_relative_frame_path(frame: Frame, raw_path: Path) -> Path | None:
+    """Rebuild legacy single-file frame paths when event metadata is available."""
+
+    if len(raw_path.parts) > 1:
+        return infer_storage_relative_frame_path(raw_path) or raw_path
+
+    event = frame.event
+    if event is None:
+        return None
+
+    started_at = normalize_datetime(event.event_start)
+    if started_at is None:
+        return None
+
+    return Path(
+        started_at.strftime("%Y/%m/%d"),
+        event.camera_id,
+        started_at.strftime("%H%M%S"),
+        raw_path.name,
+    )
+
+
+def infer_storage_relative_frame_path(raw_path: Path) -> Path | None:
+    """Strip any leading path segments before the stored frames hierarchy."""
+
+    parts = raw_path.parts
+    if "frames" not in parts:
+        return None
+
+    frames_index = len(parts) - 1 - parts[::-1].index("frames")
+    trailing_parts = parts[frames_index + 1 :]
+    if not trailing_parts:
+        return None
+    return Path(*trailing_parts)
 
 
 def normalize_datetime(value: datetime | None) -> datetime | None:

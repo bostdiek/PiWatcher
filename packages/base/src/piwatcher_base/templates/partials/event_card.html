@@ -13,9 +13,12 @@
                     <h2 class="font-semibold text-white">{{ event.label or "Unclassified" }}</h2>
                     <p class="text-sm text-gray-400">{{ event.camera_id }}</p>
                 </div>
-                {% if event.confidence is not none %}
-                <span class="rounded-full bg-emerald-400/10 px-2 py-1 text-xs font-medium text-emerald-300">{{ "%.0f"|format(event.confidence * 100) }}%</span>
-                {% endif %}
+                <div class="flex flex-col items-end gap-2">
+                    <span class="rounded-full px-2 py-1 text-xs font-medium {{ event.classification_status_class }}">{{ event.classification_status }}</span>
+                    {% if event.confidence is not none %}
+                    <span class="rounded-full bg-emerald-400/10 px-2 py-1 text-xs font-medium text-emerald-300">{{ "%.0f"|format(event.confidence * 100) }}%</span>
+                    {% endif %}
+                </div>
             </div>
             <div class="grid grid-cols-2 gap-2 text-xs text-gray-400">
                 <span>{{ event.frame_count }} frames</span>
