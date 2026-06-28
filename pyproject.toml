@@ -5,10 +5,7 @@ description = "Wildlife camera system with Pi Zero W cameras and Pi 5 AI inferen
 requires-python = ">=3.11"
 readme = "README.md"
 license = "MIT"
-dependencies = [
-    "piwatcher-camera",
-    "piwatcher-base",
-]
+dependencies = ["piwatcher-camera", "piwatcher-base"]
 
 [tool.uv.workspace]
 members = ["packages/*"]

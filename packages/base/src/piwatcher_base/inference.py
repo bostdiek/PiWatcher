@@ -7,7 +7,7 @@ import logging
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
@@ -19,6 +19,25 @@ from .models import Event
 from .notifications import notify_detection
 
 logger = logging.getLogger(__name__)
+
+ALLOWED_LABELS: tuple[str, ...] = (
+    "deer",
+    "bear",
+    "coyote",
+    "fox",
+    "raccoon",
+    "skunk",
+    "rabbit",
+    "squirrel",
+    "bird",
+    "turkey",
+    "cat",
+    "dog",
+    "human",
+    "vehicle",
+    "unknown",
+    "empty",
+)
 
 WildlifeLabel = Literal[
     "deer",
@@ -39,6 +58,25 @@ WildlifeLabel = Literal[
     "empty",
 ]
 
+LABEL_ALIASES: dict[str, WildlifeLabel] = {
+    "animal": "unknown",
+    "animals": "unknown",
+    "birds": "bird",
+    "car": "vehicle",
+    "cars": "vehicle",
+    "human being": "human",
+    "man": "human",
+    "none": "empty",
+    "no animal": "empty",
+    "no wildlife": "empty",
+    "nothing": "empty",
+    "person": "human",
+    "people": "human",
+    "truck": "vehicle",
+    "vehicle": "vehicle",
+    "wildlife": "unknown",
+}
+
 
 class WildlifeClassification(BaseModel):
     """Validated wildlife classification result."""
@@ -46,6 +84,96 @@ class WildlifeClassification(BaseModel):
     label: WildlifeLabel
     confidence: float = Field(ge=0.0, le=1.0)
     description: str = Field(max_length=200)
+
+
+def classification_prompt_text() -> str:
+    """Return the frame-classification instruction sent to the local model."""
+
+    return (
+        "What is the main thing visible in this image? "
+        "Choose the closest label from the schema and describe only what you actually see. "
+        "Use unknown if the subject is unclear and empty if nothing relevant is visible."
+    )
+
+
+def response_format_json_schema() -> dict[str, Any]:
+    """Return a strict schema payload for llama.cpp structured outputs."""
+
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "frame_classification",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "label": {
+                        "type": "string",
+                        "enum": list(ALLOWED_LABELS),
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "description": {
+                        "type": "string",
+                        "maxLength": 200,
+                    },
+                },
+                "required": ["label", "confidence", "description"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def summarize_response_body(response: httpx.Response, limit: int = 500) -> str:
+    """Return a bounded response body summary for inference diagnostics."""
+
+    text = response.text.strip()
+    if not text:
+        return "<empty>"
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...<truncated>"
+
+
+def strip_json_fences(content: str) -> str:
+    """Remove Markdown code fences around JSON model output."""
+
+    stripped = content.strip()
+    if not stripped.startswith("```"):
+        return stripped
+
+    lines = stripped.splitlines()
+    if not lines:
+        return stripped
+
+    if lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def normalize_label(label: str) -> WildlifeLabel:
+    """Map model labels into the constrained dashboard taxonomy."""
+
+    normalized = label.strip().lower()
+    if normalized in ALLOWED_LABELS:
+        return cast("WildlifeLabel", normalized)
+    if normalized in LABEL_ALIASES:
+        return LABEL_ALIASES[normalized]
+    return "unknown"
+
+
+def parse_classification_content(content: str) -> WildlifeClassification:
+    """Parse model output, tolerating fenced JSON and loose labels."""
+
+    parsed = json.loads(strip_json_fences(content))
+    parsed["label"] = normalize_label(str(parsed.get("label", "unknown")))
+    return WildlifeClassification.model_validate(parsed)
 
 
 class LlamaSwapClassifier:
@@ -66,10 +194,7 @@ class LlamaSwapClassifier:
                     "content": [
                         {
                             "type": "text",
-                            "text": (
-                                "Classify the wildlife or scene in this frame. Return only JSON "
-                                "with label, confidence, and description."
-                            ),
+                            "text": classification_prompt_text(),
                         },
                         {
                             "type": "image_url",
@@ -78,7 +203,7 @@ class LlamaSwapClassifier:
                     ],
                 }
             ],
-            "response_format": {"type": "json_object"},
+            "response_format": response_format_json_schema(),
             "temperature": 0,
         }
         async with httpx.AsyncClient(timeout=60) as client:
@@ -86,9 +211,24 @@ class LlamaSwapClassifier:
                 f"{self.settings.llama_swap_url.rstrip('/')}/chat/completions",
                 json=payload,
             )
+        try:
             response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        return WildlifeClassification.model_validate_json(content)
+            content = response.json()["choices"][0]["message"]["content"]
+            return parse_classification_content(content)
+        except httpx.HTTPStatusError:
+            logger.warning(
+                "Inference endpoint returned HTTP %s: %s",
+                response.status_code,
+                summarize_response_body(response),
+            )
+            raise
+        except (KeyError, ValidationError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Inference endpoint returned an unusable response: %s; body=%s",
+                exc,
+                summarize_response_body(response),
+            )
+            raise
 
 
 def get_cpu_temp() -> float:
@@ -120,7 +260,9 @@ async def wait_for_safe_temperature(settings: Settings) -> None:
         await asyncio.sleep(5)
 
 
-def choose_classification(results: list[WildlifeClassification]) -> WildlifeClassification:
+def choose_classification(
+    results: list[WildlifeClassification],
+) -> WildlifeClassification:
     """Choose the majority label, using confidence as the tie-breaker."""
 
     if not results:
@@ -150,6 +292,12 @@ async def classify_event_background(event_id: int, frame_paths: list[Path]) -> N
     classifier = LlamaSwapClassifier(settings)
     sampled_paths = sample_frame_paths(frame_paths)
     results: list[WildlifeClassification] = []
+    logger.info(
+        "Starting inference for event %s with %s sampled frames via %s",
+        event_id,
+        len(sampled_paths),
+        settings.llama_swap_url,
+    )
 
     for index, frame_path in enumerate(sampled_paths):
         await wait_for_safe_temperature(settings)
@@ -162,12 +310,25 @@ async def classify_event_background(event_id: int, frame_paths: list[Path]) -> N
                 exc,
             )
             break
-        except (httpx.HTTPError, OSError, KeyError, ValidationError, json.JSONDecodeError):
+        except (
+            httpx.HTTPError,
+            OSError,
+            KeyError,
+            ValidationError,
+            json.JSONDecodeError,
+        ):
             logger.warning("Failed to classify frame %s for event %s", frame_path, event_id)
         if index < len(sampled_paths) - 1 and settings.inference_gap_seconds > 0:
             await asyncio.sleep(settings.inference_gap_seconds)
 
     classification = choose_classification(results)
+    logger.info(
+        "Finished inference for event %s with label=%s confidence=%.3f from %s successful samples",
+        event_id,
+        classification.label,
+        classification.confidence,
+        len(results),
+    )
     raw_classification = {
         "samples": [result.model_dump() for result in results],
         "selected": classification.model_dump(),

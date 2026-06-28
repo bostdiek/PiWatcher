@@ -72,15 +72,19 @@
             </dl>
             <div class="mt-5 grid gap-4 sm:grid-cols-2">
                 <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Battery (%)</p>
                     <canvas id="battery-chart-{{ loop.index }}" aria-label="Battery history for {{ camera.camera_id }}"></canvas>
                 </div>
                 <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Wi-Fi RSSI (dBm)</p>
                     <canvas id="wifi-chart-{{ loop.index }}" aria-label="Wi-Fi signal history for {{ camera.camera_id }}"></canvas>
                 </div>
                 <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Queue depth (frames)</p>
                     <canvas id="queue-chart-{{ loop.index }}" aria-label="Queue depth history for {{ camera.camera_id }}"></canvas>
                 </div>
                 <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">CPU temperature (C)</p>
                     <canvas id="temperature-chart-{{ loop.index }}" aria-label="CPU temperature history for {{ camera.camera_id }}"></canvas>
                 </div>
             </div>
@@ -100,10 +104,10 @@
 <script>
     const healthCharts = {{ chart_data_json | safe }};
     const metricConfig = {
-        battery: { suffix: "%", color: "#34d399", min: 0, max: 100 },
-        wifi: { suffix: " dBm", color: "#60a5fa" },
-        queue: { suffix: " queued", color: "#f59e0b", min: 0 },
-        temperature: { suffix: " C", color: "#f87171", min: 0 },
+        battery: { label: "Battery", unit: "%", color: "#34d399", min: 0, max: 100 },
+        wifi: { label: "Wi-Fi RSSI", unit: "dBm", color: "#60a5fa" },
+        queue: { label: "Queue depth", unit: "frames", color: "#f59e0b", min: 0 },
+        temperature: { label: "CPU temperature", unit: "C", color: "#f87171", min: 0 },
     };
 
     function renderMetricChart(camera, index, metricName) {
@@ -116,7 +120,8 @@
             data: {
                 labels: metric.labels,
                 datasets: [{
-                    data: metric.values,
+                        label: `${config.label} (${config.unit})`,
+                        data: metric.values,
                     borderColor: config.color,
                     backgroundColor: `${config.color}22`,
                     borderWidth: 2,
@@ -132,13 +137,44 @@
                     legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            label: (context) => `${context.parsed.y}${config.suffix}`,
+                                label: (context) => `${config.label}: ${context.parsed.y} ${config.unit}`,
                         },
                     },
                 },
                 scales: {
-                    x: { display: false },
-                    y: { display: false, min: config.min, max: config.max },
+                        x: {
+                            display: true,
+                            ticks: {
+                                color: "#9ca3af",
+                                maxTicksLimit: 4,
+                            },
+                            grid: {
+                                display: false,
+                            },
+                            title: {
+                                display: true,
+                                text: "Time",
+                                color: "#9ca3af",
+                            },
+                        },
+                        y: {
+                            display: true,
+                            min: config.min,
+                            max: config.max,
+                            ticks: {
+                                color: "#9ca3af",
+                                maxTicksLimit: 4,
+                                callback: (value) => `${value} ${config.unit}`,
+                            },
+                            grid: {
+                                color: "rgba(156, 163, 175, 0.12)",
+                            },
+                            title: {
+                                display: true,
+                                text: config.unit,
+                                color: "#9ca3af",
+                            },
+                        },
                 },
             },
         });

@@ -75,7 +75,9 @@ def test_given_standalone_without_wifi_management_when_send_then_does_not_toggle
     assert wifi_calls == []
 
 
-def test_given_frame_queue_when_collect_telemetry_then_reports_queue_and_disk(tmp_path) -> None:
+def test_given_frame_queue_when_collect_telemetry_then_reports_queue_and_disk(
+    tmp_path,
+) -> None:
     # Arrange
     frame_queue = tmp_path / "frames"
     frame_queue.mkdir()

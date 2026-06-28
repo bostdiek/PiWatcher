@@ -1,5 +1,5 @@
 # Makefile - PiWatcher development and deployment
-.PHONY: lint typecheck test test-cov base-db-up base-migrate base-llama-up base-up deploy-camera update-cameras setup-camera
+.PHONY: lint typecheck test test-cov base-db-up base-migrate base-llama-up base-inference-up base-up deploy-base deploy-camera deploy-inference update-cameras setup-camera
 
 # Configuration
 CAMERAS ?= feeder-cam.local pond-cam.local
@@ -7,6 +7,12 @@ CAMERA_SRC := packages/camera/src/piwatcher_camera/
 CAMERA_DEST := ~/piwatcher/
 CAMERA_USER ?= pi
 CAMERA_SERVICE := piwatcher-camera
+ENABLE_INFERENCE ?= false
+BASE_UP_DEPS := base-db-up base-migrate
+
+ifeq ($(ENABLE_INFERENCE),true)
+BASE_UP_DEPS += base-inference-up
+endif
 
 # Development
 lint:
@@ -31,19 +37,29 @@ base-db-up:
 	docker compose up -d postgres
 
 base-llama-up:
-	bash deploy/setup-llama-swap.sh
+	LLAMA_SWAP_RUNTIME=docker bash deploy/setup-llama-swap.sh
 	docker compose up -d llama-swap
+
+base-inference-up: base-llama-up
 
 base-migrate:
 	cd packages/base && uv run alembic upgrade head
 
-base-up: base-db-up base-llama-up base-migrate
+base-up: $(BASE_UP_DEPS)
 	uv run --package piwatcher-base piwatcher-server
 
 # Deployment
 deploy-camera:
 	@if [ -z "$(CAM)" ]; then echo "Usage: make deploy-camera CAM=pizero.local CAMERA_USER=pizero"; exit 1; fi
 	bash deploy/deploy-camera.sh $(CAM) $(CAMERA_USER)
+
+deploy-base:
+	@if [ -z "$(BASE)" ]; then echo "Usage: make deploy-base BASE=pi5.local BASE_USER=bostdiek"; exit 1; fi
+	bash deploy/deploy-base.sh $(BASE) $(BASE_USER)
+
+deploy-inference:
+	@if [ -z "$(BASE)" ]; then echo "Usage: make deploy-inference BASE=pi5.local BASE_USER=bostdiek"; exit 1; fi
+	bash deploy/deploy-inference.sh $(BASE) $(BASE_USER)
 
 update-cameras:
 	@for cam in $(CAMERAS); do \

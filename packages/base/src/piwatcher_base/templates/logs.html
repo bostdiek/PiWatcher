@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Base Logs{% endblock %}
+
+{% block content %}
+<section class="space-y-6">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+            <p class="text-sm uppercase tracking-wide text-emerald-300">Troubleshooting</p>
+            <h1 class="text-3xl font-semibold text-white">Base Logs</h1>
+        </div>
+        <p class="text-sm text-gray-400">Showing the last {{ log_view.lookback_minutes }} minutes from {{ log_view.units | join(", ") }}.</p>
+    </div>
+
+    {% if log_view.error_message %}
+    <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+        {{ log_view.error_message }}
+    </div>
+    {% endif %}
+
+    <div class="overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-lg shadow-black/20">
+        <div class="border-b border-gray-800 px-4 py-3 text-sm text-gray-400">Runtime journal</div>
+        <pre class="max-h-[70vh] overflow-x-auto overflow-y-auto px-4 py-4 text-xs leading-6 text-gray-200">{% if log_view.has_entries %}{{ log_view.lines | join('\n') }}{% else %}No log entries found for the selected lookback window.{% endif %}</pre>
+    </div>
+</section>
+{% endblock %}

@@ -1,4 +1,11 @@
 models:
-  lfm2-vl-450m:
-    cmd: llama-server --host 127.0.0.1 --port ${PORT} --model /models/lfm2-vl-450m.gguf --mmproj /models/lfm2-vl-450m-mmproj.gguf
+  lfm2.5-vl-450m-q4_0:
+    cmd: |
+      /home/bostdiek/Projects/llama.cpp/build/bin/llama-server
+      --model /home/bostdiek/piwatcher/models/LFM2.5-VL-450M-Q4_0.gguf
+      --host 127.0.0.1
+      --port ${PORT}
+      --ctx-size 1000
+      --cache-ram 512
+      --media-path /home/bostdiek/Downloads
     ttl: 300

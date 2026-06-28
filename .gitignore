@@ -22,6 +22,8 @@ var/
 wheels/
 # Environments
 .env
+mac.env
+pi5.env
 *.env.camera
 deploy/llama-swap/config.local.yaml
 tmp/piwatcher/
