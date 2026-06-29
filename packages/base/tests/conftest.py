@@ -1,5 +1,6 @@
 """Shared fixtures for base station tests."""
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
@@ -8,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from piwatcher_base.config import Settings, get_settings
-from piwatcher_base.db import get_db
+from piwatcher_base.db import close_db, get_db
 from piwatcher_base.main import app
 from piwatcher_base.models import Base
 
@@ -25,12 +26,15 @@ def test_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Setting
     )
     monkeypatch.setattr("piwatcher_base.config.get_settings", lambda: settings)
     monkeypatch.setattr("piwatcher_base.auth.get_settings", lambda: settings)
+    monkeypatch.setattr("piwatcher_base.db.get_settings", lambda: settings)
     monkeypatch.setattr("piwatcher_base.routes.events.get_settings", lambda: settings)
     monkeypatch.setattr("piwatcher_base.routes.dashboard.get_settings", lambda: settings)
     monkeypatch.setattr("piwatcher_base.inference.get_settings", lambda: settings)
     monkeypatch.setattr("piwatcher_base.routes.heartbeat.get_settings", lambda: settings)
+    asyncio.run(close_db())
     get_settings.cache_clear()
     yield settings
+    asyncio.run(close_db())
     app.dependency_overrides.clear()
     get_settings.cache_clear()
 

@@ -27,10 +27,19 @@ class Event(Base):
     """Motion event captured by a camera."""
 
     __tablename__ = "events"
-    __table_args__ = (Index("ix_events_created_at", "created_at"),)
+    __table_args__ = (
+        Index("ix_events_created_at", "created_at"),
+        Index(
+            "ux_events_camera_id_camera_event_id",
+            "camera_id",
+            "camera_event_id",
+            unique=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     camera_id: Mapped[str] = mapped_column(String(50), index=True)
+    camera_event_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     event_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     event_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     frame_count: Mapped[int] = mapped_column(Integer)
@@ -96,6 +105,7 @@ class Heartbeat(Base):
     wifi_rssi_dbm: Mapped[int | None] = mapped_column(Integer)
     disk_free_mb: Mapped[int | None] = mapped_column(Integer)
     queue_depth: Mapped[int | None] = mapped_column(Integer)
+    queued_event_count: Mapped[int | None] = mapped_column(Integer)
     cpu_temp_c: Mapped[float | None] = mapped_column(Float)
     wifi_power_save: Mapped[bool | None] = mapped_column(Boolean)
     software_version: Mapped[str | None] = mapped_column(String(50))

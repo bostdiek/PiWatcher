@@ -36,6 +36,11 @@ def test_given_only_required_env_when_load_config_then_uses_defaults(monkeypatch
     assert config.heartbeat_interval == 900
     assert config.wifi_power_save is True
     assert config.wifi_startup_grace_seconds == 600
+    assert config.queue_drain_max_events == 2
+    assert config.queue_drain_max_seconds == 15
+    assert config.queue_retry_initial_seconds == 30
+    assert config.queue_retry_max_seconds == 3600
+    assert config.queue_upload_lease_seconds == 300
 
 
 def test_given_wifi_power_save_env_when_load_config_then_parses_boolean(
@@ -65,3 +70,29 @@ def test_given_missing_required_env_when_load_config_then_raises(monkeypatch) ->
     # Act & Assert
     with pytest.raises(ConfigError, match="CAMERA_ID"):
         load_config()
+
+
+def test_given_queue_drain_env_when_load_config_then_parses_queue_drain_values(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    # Arrange
+    monkeypatch.setenv("CAMERA_ID", "feeder-cam")
+    monkeypatch.setenv("SERVER_URL", "http://pi5.local:8000")
+    monkeypatch.setenv("PIWATCHER_API_KEY", "secret")
+    monkeypatch.setenv("FRAME_QUEUE_DIR", str(tmp_path / "frames"))
+    monkeypatch.setenv("QUEUE_DRAIN_MAX_EVENTS", "5")
+    monkeypatch.setenv("QUEUE_DRAIN_MAX_SECONDS", "45")
+    monkeypatch.setenv("QUEUE_RETRY_INITIAL_SECONDS", "10")
+    monkeypatch.setenv("QUEUE_RETRY_MAX_SECONDS", "900")
+    monkeypatch.setenv("QUEUE_UPLOAD_LEASE_SECONDS", "120")
+
+    # Act
+    config = load_config()
+
+    # Assert
+    assert config.queue_drain_max_events == 5
+    assert config.queue_drain_max_seconds == 45
+    assert config.queue_retry_initial_seconds == 10
+    assert config.queue_retry_max_seconds == 900
+    assert config.queue_upload_lease_seconds == 120

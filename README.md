@@ -318,7 +318,7 @@ Base station settings are loaded from `.env` by `piwatcher_base.config.Settings`
 | `LLAMA_SWAP_IMAGE`       | Docker image for local/development llama-swap                      | `ghcr.io/mostlygeek/llama-swap:unified-vulkan` |
 | `LLAMA_SWAP_RUNTIME`     | Setup mode for generated llama-swap config                         | `host`                                         |
 | `LLAMA_SWAP_BIN`         | Host llama-swap executable used by systemd                         | `/home/bostdiek/.local/bin/llama-swap`         |
-| `LLAMA_SERVER_BIN`       | Host llama-server executable written into llama-swap config        | `/home/bostdiek/Projects/llama.cpp/build/bin/llama-server` |
+| `LLAMA_SERVER_BIN`       | Host llama-server executable written into llama-swap config        | `/home/.../llama-server`                       |
 | `LLAMA_SWAP_LISTEN`      | Host llama-swap listen address                                     | `127.0.0.1:8080`                               |
 | `LLAMA_SWAP_MODELS_DIR`  | Host directory containing local GGUF model files                   | `/home/bostdiek/piwatcher/models`              |
 | `LLAMA_SWAP_MODEL_FILE`  | Main GGUF model filename expected by llama-swap config             | `LFM2.5-VL-450M-Q4_0.gguf`                     |
@@ -335,24 +335,135 @@ Base station settings are loaded from `.env` by `piwatcher_base.config.Settings`
 
 Camera settings are loaded from `/home/pi/piwatcher/.env`.
 
-| Variable                     | Purpose                                                                          | Default                 |
-| ---------------------------- | -------------------------------------------------------------------------------- | ----------------------- |
-| `CAMERA_ID`                  | Stable camera identifier stored with events                                      | Required                |
-| `SERVER_URL`                 | Base station URL                                                                 | Required                |
-| `PIWATCHER_API_KEY`          | Shared bearer token                                                              | Required                |
-| `MOTION_THRESHOLD`           | Pixel difference threshold for motion detection                                  | `7.0`                   |
-| `MIN_CHANGED_PCT`            | Minimum changed-pixel percentage                                                 | `2.0`                   |
-| `CAPTURE_FPS`                | JPEG capture rate during motion events                                           | `2.0`                   |
-| `CAPTURE_MIN_DURATION`       | Minimum event capture duration in seconds                                        | `10.0`                  |
-| `COOLDOWN_SECONDS`           | Quiet period before closing an event                                             | `5.0`                   |
-| `HEARTBEAT_INTERVAL`         | Standalone heartbeat interval in seconds                                         | `900`                   |
-| `LORES_WIDTH`                | Low-resolution motion frame width                                                | `160`                   |
-| `LORES_HEIGHT`               | Low-resolution motion frame height                                               | `120`                   |
-| `MAIN_WIDTH`                 | Captured JPEG width                                                              | `1024`                  |
-| `MAIN_HEIGHT`                | Captured JPEG height                                                             | `1024`                  |
-| `FRAME_QUEUE_DIR`            | Local queue for captured frames                                                  | `/tmp/piwatcher/frames` |
-| `WIFI_POWER_SAVE`            | Whether the camera may turn Wi-Fi off between uploads                            | `true`                  |
-| `WIFI_STARTUP_GRACE_SECONDS` | Startup recovery window where Wi-Fi stays on before power saving can turn it off | `600`                   |
+| Variable                      | Purpose                                                                          | Default                 |
+| ----------------------------- | -------------------------------------------------------------------------------- | ----------------------- |
+| `CAMERA_ID`                   | Stable camera identifier stored with events                                      | Required                |
+| `SERVER_URL`                  | Base station URL                                                                 | Required                |
+| `PIWATCHER_API_KEY`           | Shared bearer token                                                              | Required                |
+| `MOTION_THRESHOLD`            | Pixel difference threshold for motion detection                                  | `7.0`                   |
+| `MIN_CHANGED_PCT`             | Minimum changed-pixel percentage                                                 | `2.0`                   |
+| `CAPTURE_FPS`                 | JPEG capture rate during motion events                                           | `2.0`                   |
+| `CAPTURE_MIN_DURATION`        | Minimum event capture duration in seconds                                        | `10.0`                  |
+| `COOLDOWN_SECONDS`            | Quiet period before closing an event                                             | `5.0`                   |
+| `HEARTBEAT_INTERVAL`          | Standalone heartbeat interval in seconds                                         | `900`                   |
+| `LORES_WIDTH`                 | Low-resolution motion frame width                                                | `160`                   |
+| `LORES_HEIGHT`                | Low-resolution motion frame height                                               | `120`                   |
+| `MAIN_WIDTH`                  | Captured JPEG width                                                              | `1024`                  |
+| `MAIN_HEIGHT`                 | Captured JPEG height                                                             | `1024`                  |
+| `FRAME_QUEUE_DIR`             | Local queue for captured frames                                                  | `/tmp/piwatcher/frames` |
+| `WIFI_POWER_SAVE`             | Whether the camera may turn Wi-Fi off between uploads                            | `true`                  |
+| `WIFI_STARTUP_GRACE_SECONDS`  | Startup recovery window where Wi-Fi stays on before power saving can turn it off | `600`                   |
+| `QUEUE_DRAIN_MAX_EVENTS`      | Maximum durable queue events drained per idle cycle                              | `2`                     |
+| `QUEUE_DRAIN_MAX_SECONDS`     | Maximum wall-clock seconds spent draining queue per idle cycle                   | `15`                    |
+| `QUEUE_RETRY_INITIAL_SECONDS` | Initial retry backoff after a retryable upload failure                           | `30`                    |
+| `QUEUE_RETRY_MAX_SECONDS`     | Maximum retry backoff cap for durable queue uploads                              | `3600`                  |
+| `QUEUE_UPLOAD_LEASE_SECONDS`  | Lease timeout before stale uploading bundles are returned to pending             | `300`                   |
+
+## Camera Queue Backlog Cleanup
+
+The camera runtime writes new captures into durable event bundles under `FRAME_QUEUE_DIR/events/` with one `event.json` manifest per event bundle. Upload retries rely on these bundles so the original motion event boundaries stay intact across restarts and network failures.
+
+Bundle layout:
+
+```text
+FRAME_QUEUE_DIR/
+    events/
+        YYYY/
+            MM/
+                DD/
+                    <camera-id-slug>/
+                        <event-id>/
+                            event.json
+                            frame_0000.jpg
+                            frame_0001.jpg
+```
+
+Each bundle manifest stores durable event metadata including `event_id`, `camera_id`, `event_start`, optional `event_end`, ordered frame entries, and retry state fields such as `status`, `attempt_count`, `last_attempt_at`, `next_attempt_at`, and `last_error`.
+
+Top-level loose `*.jpg` files in `FRAME_QUEUE_DIR` are treated as legacy backlog. They are included in `queue_depth` telemetry, but they do not preserve reliable event boundaries and should not be replayed as complete events.
+
+Metric meaning:
+
+* `queue_depth` is queued frame count, not queued event count
+* `queued_event_count` is queued durable event bundle count and can be null when the camera has not reported the metric yet
+
+In mixed fleets, older cameras can still report only `queue_depth`. In that case, dashboard views should treat `queued_event_count` as missing data rather than as zero.
+
+Use these explicit cleanup operations for legacy loose JPEG files:
+
+1. Inventory (non-destructive).
+2. Quarantine (recommended first destructive action).
+3. Delete only after explicit confirmation.
+
+Use this workflow in order to reduce accidental data loss.
+
+1. Inventory only (non-destructive default):
+
+```bash
+python - <<'PY'
+from pathlib import Path
+from piwatcher_camera.queue import inventory_legacy_backlog
+
+summary = inventory_legacy_backlog(Path('/tmp/piwatcher/frames'))
+print(summary)
+PY
+```
+
+1. Quarantine loose files into `FRAME_QUEUE_DIR/legacy/YYYYMMDDTHHMMSSZ/`:
+
+```bash
+python - <<'PY'
+from datetime import datetime, UTC
+from pathlib import Path
+from piwatcher_camera.queue import quarantine_legacy_backlog
+
+result = quarantine_legacy_backlog(
+    Path('/tmp/piwatcher/frames'),
+    now=datetime.now(UTC),
+)
+print(result)
+PY
+```
+
+1. Delete loose files only with explicit confirmation:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+from piwatcher_camera.queue import delete_legacy_backlog
+
+result = delete_legacy_backlog(
+    Path('/tmp/piwatcher/frames'),
+    confirm_delete=True,
+)
+print(result)
+PY
+```
+
+Before quarantine or delete actions, stop the camera service or lock queue writes so new files are not created while cleanup runs.
+
+> [!WARNING]
+> Legacy loose `*.jpg` files do not carry reliable event start/end boundaries, so replaying them as normal motion events can produce misleading event history.
+
+### Deployment and migration order
+
+Roll out base changes before camera changes:
+
+1. Deploy updated base code.
+2. Apply base database migrations so heartbeat writes can persist `queued_event_count`.
+3. Restart or redeploy the base service.
+4. Deploy updated camera code.
+5. Verify dashboard health cards show queued frames and queued events separately.
+
+If you roll out cameras before the base migration, heartbeat writes can fail on the base when cameras submit `queued_event_count`.
+
+Recommended migration command on the base host:
+
+```bash
+make base-migrate
+```
+
+After camera rollout, evaluate legacy loose files with inventory or quarantine before any deletion.
 
 ## Make Targets
 

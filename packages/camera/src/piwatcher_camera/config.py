@@ -31,6 +31,11 @@ class CameraConfig:
     frame_queue_dir: Path = Path("/tmp/piwatcher/frames")
     wifi_power_save: bool = True
     wifi_startup_grace_seconds: int = 600
+    queue_drain_max_events: int = 2
+    queue_drain_max_seconds: int = 15
+    queue_retry_initial_seconds: int = 30
+    queue_retry_max_seconds: int = 3600
+    queue_upload_lease_seconds: int = 300
 
 
 def load_config(env_file: Path | str | None = None) -> CameraConfig:
@@ -53,6 +58,11 @@ def load_config(env_file: Path | str | None = None) -> CameraConfig:
         frame_queue_dir=Path(os.getenv("FRAME_QUEUE_DIR", "/tmp/piwatcher/frames")),
         wifi_power_save=_bool_env("WIFI_POWER_SAVE", True),
         wifi_startup_grace_seconds=_int_env("WIFI_STARTUP_GRACE_SECONDS", 600),
+        queue_drain_max_events=_int_env("QUEUE_DRAIN_MAX_EVENTS", 2),
+        queue_drain_max_seconds=_int_env("QUEUE_DRAIN_MAX_SECONDS", 15),
+        queue_retry_initial_seconds=_int_env("QUEUE_RETRY_INITIAL_SECONDS", 30),
+        queue_retry_max_seconds=_int_env("QUEUE_RETRY_MAX_SECONDS", 3600),
+        queue_upload_lease_seconds=_int_env("QUEUE_UPLOAD_LEASE_SECONDS", 300),
     )
     config.frame_queue_dir.mkdir(parents=True, exist_ok=True)
     return config

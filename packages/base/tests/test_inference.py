@@ -1,5 +1,6 @@
 """Inference pipeline tests."""
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -251,6 +252,12 @@ async def test_given_successful_inference_when_classify_event_then_logs_start_an
         "notify_detection",
         lambda *args, **kwargs: inference.asyncio.sleep(0),
     )
+
+    @asynccontextmanager
+    async def session_scope_stub():
+        yield db_session
+
+    monkeypatch.setattr(inference, "session_scope", session_scope_stub)
     caplog.set_level("INFO", logger="piwatcher_base.inference")
 
     # Act

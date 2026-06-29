@@ -115,6 +115,8 @@ async def test_given_heartbeats_when_health_requested_then_renders_status_and_ch
         Heartbeat(
             camera_id="feeder-cam",
             battery_pct=72,
+            queue_depth=3,
+            queued_event_count=1,
             created_at=datetime.now(UTC) - timedelta(minutes=5),
         )
     )
@@ -129,7 +131,8 @@ async def test_given_heartbeats_when_health_requested_then_renders_status_and_ch
     assert "Online" in response.text
     assert "Battery (%)" in response.text
     assert "Wi-Fi RSSI (dBm)" in response.text
-    assert "Queue depth (frames)" in response.text
+    assert "Queued frames" in response.text
+    assert "Queued events" in response.text
     assert "CPU temperature (C)" in response.text
 
 
@@ -178,6 +181,32 @@ async def test_given_legacy_heartbeat_when_health_requested_then_renders_without
     # Assert
     assert response.status_code == 200
     assert "legacy-cam" in response.text
+
+
+@pytest.mark.asyncio()
+async def test_given_missing_queued_event_count_when_health_requested_then_renders_placeholder(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    # Arrange
+    db_session.add(
+        Heartbeat(
+            camera_id="placeholder-cam",
+            queue_depth=4,
+            created_at=datetime.now(UTC) - timedelta(minutes=2),
+        )
+    )
+    await db_session.commit()
+
+    # Act
+    response = await client.get("/health")
+
+    # Assert
+    assert response.status_code == 200
+    assert "placeholder-cam" in response.text
+    assert "Queued events" in response.text
+    assert "Queued frame history for placeholder-cam" in response.text
+    assert "Queued event history for placeholder-cam" in response.text
 
 
 def test_given_display_timezone_when_format_datetime_then_renders_local_time(

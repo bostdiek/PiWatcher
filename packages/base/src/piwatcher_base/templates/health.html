@@ -17,7 +17,8 @@
         {% for camera in cameras_health %}
         {% set battery_pct = camera.get("battery_pct") %}
         {% set wifi_rssi_dbm = camera.get("wifi_rssi_dbm") %}
-        {% set queue_depth = camera.get("queue_depth") %}
+        {% set queued_frame_count = camera.get("queued_frame_count") %}
+        {% set queued_event_count = camera.get("queued_event_count") %}
         {% set cpu_temp_c = camera.get("cpu_temp_c") %}
         {% set disk_free_mb = camera.get("disk_free_mb") %}
         {% set uptime_seconds = camera.get("uptime_seconds") %}
@@ -46,8 +47,12 @@
                     <dd class="text-lg font-semibold text-white">{{ wifi_rssi_dbm if wifi_rssi_dbm is not none else "--" }} dBm</dd>
                 </div>
                 <div class="rounded-md bg-gray-950 p-3">
-                    <dt class="text-gray-500">Queue</dt>
-                    <dd class="text-lg font-semibold text-white">{{ queue_depth if queue_depth is not none else "--" }}</dd>
+                    <dt class="text-gray-500">Queued frames</dt>
+                    <dd class="text-lg font-semibold text-white">{{ queued_frame_count if queued_frame_count is not none else "--" }}</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">Queued events</dt>
+                    <dd class="text-lg font-semibold text-white">{{ queued_event_count if queued_event_count is not none else "--" }}</dd>
                 </div>
                 <div class="rounded-md bg-gray-950 p-3">
                     <dt class="text-gray-500">CPU</dt>
@@ -80,8 +85,12 @@
                     <canvas id="wifi-chart-{{ loop.index }}" aria-label="Wi-Fi signal history for {{ camera.camera_id }}"></canvas>
                 </div>
                 <div class="h-28 rounded-md bg-gray-950 p-3">
-                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Queue depth (frames)</p>
-                    <canvas id="queue-chart-{{ loop.index }}" aria-label="Queue depth history for {{ camera.camera_id }}"></canvas>
+                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Queued frames</p>
+                    <canvas id="queued_frames-chart-{{ loop.index }}" aria-label="Queued frame history for {{ camera.camera_id }}"></canvas>
+                </div>
+                <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Queued events</p>
+                    <canvas id="queued_events-chart-{{ loop.index }}" aria-label="Queued event history for {{ camera.camera_id }}"></canvas>
                 </div>
                 <div class="h-28 rounded-md bg-gray-950 p-3">
                     <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">CPU temperature (C)</p>
@@ -106,7 +115,8 @@
     const metricConfig = {
         battery: { label: "Battery", unit: "%", color: "#34d399", min: 0, max: 100 },
         wifi: { label: "Wi-Fi RSSI", unit: "dBm", color: "#60a5fa" },
-        queue: { label: "Queue depth", unit: "frames", color: "#f59e0b", min: 0 },
+        queued_frames: { label: "Queued frames", unit: "frames", color: "#f59e0b", min: 0 },
+        queued_events: { label: "Queued events", unit: "events", color: "#a78bfa", min: 0 },
         temperature: { label: "CPU temperature", unit: "C", color: "#f87171", min: 0 },
     };
 
@@ -181,7 +191,7 @@
     }
 
     healthCharts.forEach((camera, index) => {
-        ["battery", "wifi", "queue", "temperature"].forEach((metricName) => renderMetricChart(camera, index, metricName));
+        ["battery", "wifi", "queued_frames", "queued_events", "temperature"].forEach((metricName) => renderMetricChart(camera, index, metricName));
     });
 </script>
 {% endblock %}
