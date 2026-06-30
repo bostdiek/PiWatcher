@@ -32,8 +32,8 @@ Environment overrides:
   BASE_ENV_FILE        Local env file copied to remote .env when present. Defaults to pi5.env
   FRAME_STORAGE_PATH   Frame storage directory to create/chown before startup
   UV_BIN               Remote uv executable. Defaults to /home/<user>/.local/bin/uv
-  ENABLE_BASE_SERVICE  Defaults to false
-  START_BASE           Defaults to false
+  ENABLE_BASE_SERVICE  true|false|preserve (default: preserve)
+  START_BASE           true|false|preserve (default: preserve)
 USAGE
 }
 
@@ -116,6 +116,8 @@ main() {
   local remote="${base_user}@${base_host}"
   local project_dir="${BASE_PROJECT_DIR:-/home/${base_user}/Projects/PiWatcher}"
   local base_env_file="${BASE_ENV_FILE:-${DEFAULT_BASE_ENV_FILE}}"
+  local enable_base_service="${ENABLE_BASE_SERVICE:-preserve}"
+  local start_base="${START_BASE:-preserve}"
   local frame_storage_path="${FRAME_STORAGE_PATH:-${DEFAULT_FRAME_STORAGE_PATH}}"
   if [[ -z "${FRAME_STORAGE_PATH:-}" && -f "${base_env_file}" ]]; then
     frame_storage_path="$(read_env_value "${base_env_file}" FRAME_STORAGE_PATH)"
@@ -130,11 +132,28 @@ main() {
   cleanup_tmp_dir="${tmp_dir}"
   trap cleanup EXIT
 
+  case "${enable_base_service}" in
+    true|false|preserve) ;;
+    *) err "ENABLE_BASE_SERVICE must be true, false, or preserve" ;;
+  esac
+
+  case "${start_base}" in
+    true|false|preserve) ;;
+    *) err "START_BASE must be true, false, or preserve" ;;
+  esac
+
   printf "Deploying PiWatcher base to %s:%s\n" \
     "${remote}" \
     "${project_dir}"
 
   open_ssh_master "${remote}" "${control_path}"
+
+  local service_enabled_before
+  service_enabled_before="$(ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
+    "if sudo systemctl is-enabled --quiet piwatcher-base.service; then echo true; else echo false; fi")"
+  local service_active_before
+  service_active_before="$(ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
+    "if sudo systemctl is-active --quiet piwatcher-base.service; then echo true; else echo false; fi")"
 
   ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
     "mkdir -p '${project_dir}'"
@@ -176,13 +195,22 @@ main() {
   ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
     "sudo install -d -o '${base_user}' -g '${base_user}' '${frame_storage_path}'"
 
+  if [[ "${service_active_before}" == "true" ]]; then
+    ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
+      "sudo systemctl stop piwatcher-base.service"
+  fi
+
   ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
-    "test -x '${uv_bin}' && cd '${project_dir}' && docker compose up -d postgres && cd packages/base && '${uv_bin}' run alembic upgrade head"
+    "test -x '${uv_bin}' && cd '${project_dir}' && docker compose up -d postgres && cd packages/base && PGOPTIONS='-c lock_timeout=10s -c statement_timeout=15min' '${uv_bin}' run alembic upgrade head"
 
   ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
     "sudo cp '${project_dir}/deploy/piwatcher-base.service' /etc/systemd/system/piwatcher-base.service && sudo systemctl daemon-reload"
 
-  if [[ "${ENABLE_BASE_SERVICE:-false}" == "true" ]]; then
+  if [[ "${enable_base_service}" == "preserve" ]]; then
+    enable_base_service="${service_enabled_before}"
+  fi
+
+  if [[ "${enable_base_service}" == "true" ]]; then
     ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
       "sudo systemctl enable piwatcher-base.service"
   else
@@ -190,7 +218,11 @@ main() {
       "sudo systemctl disable piwatcher-base.service >/dev/null 2>&1 || true"
   fi
 
-  if [[ "${START_BASE:-false}" == "true" ]]; then
+  if [[ "${start_base}" == "preserve" ]]; then
+    start_base="${service_active_before}"
+  fi
+
+  if [[ "${start_base}" == "true" ]]; then
     ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
       "sudo systemctl restart piwatcher-base.service && sudo systemctl status --no-pager -l piwatcher-base.service"
   else
