@@ -50,8 +50,20 @@ base-up: $(BASE_UP_DEPS)
 
 # Deployment
 deploy-camera:
-	@if [ -z "$(CAM)" ]; then echo "Usage: make deploy-camera CAM=pizero.local CAMERA_USER=pizero"; exit 1; fi
-	bash deploy/deploy-camera.sh $(CAM) $(CAMERA_USER)
+	@if [ -z "$(CAM)" ] && [ -z "$(CAMERA_ENV_FILE)" ]; then \
+		echo "Usage: make deploy-camera CAM=pizero.local CAMERA_USER=pizero"; \
+		echo "   or: make deploy-camera CAMERA_ENV_FILE=deploy/cameras/roomtest.env"; \
+		exit 1; \
+	fi
+	@if [ -n "$(CAMERA_ENV_FILE)" ]; then \
+		if [ "$(origin CAMERA_USER)" = "command line" ]; then \
+			bash deploy/deploy-camera.sh "$(CAMERA_ENV_FILE)" "$(CAMERA_USER)"; \
+		else \
+			bash deploy/deploy-camera.sh "$(CAMERA_ENV_FILE)"; \
+		fi; \
+	else \
+		bash deploy/deploy-camera.sh "$(CAM)" "$(CAMERA_USER)"; \
+	fi
 
 deploy-base:
 	@if [ -z "$(BASE)" ]; then echo "Usage: make deploy-base BASE=pi5.local BASE_USER=bostdiek"; exit 1; fi

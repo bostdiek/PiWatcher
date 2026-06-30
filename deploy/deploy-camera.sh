@@ -25,9 +25,14 @@ err() {
 
 usage() {
   cat <<'USAGE'
-Usage: deploy/deploy-camera.sh <camera-host> [camera-user]
+Usage: deploy/deploy-camera.sh <camera-host|camera-env-file> [camera-user]
 
 Environment overrides:
+  CAMERA_ENV_FILE        Optional env profile file. If set, values are loaded
+                         before defaults. Host can come from CAMERA_HOST.
+                         First argument may also be this file path.
+  CAMERA_HOST            Camera host when using CAMERA_ENV_FILE
+  CAMERA_USER            Camera user when not passed as positional argument
   CAMERA_ID              Defaults to host name without .local
   SERVER_URL             Defaults to http://<local-wifi-ip>:8000
   MOTION_THRESHOLD       Defaults to 7.0
@@ -43,8 +48,10 @@ Environment overrides:
   FRAME_QUEUE_DIR        Defaults to /tmp/piwatcher/frames
   WIFI_POWER_SAVE        Defaults to false for local deploys
   WIFI_STARTUP_GRACE_SECONDS Defaults to 600
-  ENABLE_CAMERA_SERVICE  Defaults to false
-  START_CAMERA           Defaults to false
+  ENABLE_CAMERA_SERVICE  Optional: true enables, false disables,
+                         unset preserves current enabled/disabled state
+  START_CAMERA           Optional: true restarts, false stops,
+                         unset preserves current running/stopped state
 USAGE
 }
 
@@ -57,7 +64,8 @@ require_command() {
 }
 
 read_env_value() {
-  local key="$1"
+  local env_file="$1"
+  local key="$2"
 
   awk -F= -v key="${key}" '
     $1 == key {
@@ -66,7 +74,25 @@ read_env_value() {
       print value
       exit
     }
-  ' "${ROOT_ENV}"
+  ' "${env_file}"
+}
+
+apply_env_default_from_file() {
+  local env_file="$1"
+  local key="$2"
+  local value=""
+
+  if [[ -n "${!key:-}" ]]; then
+    return
+  fi
+
+  value="$(read_env_value "${env_file}" "${key}")"
+  if [[ -z "${value}" ]]; then
+    return
+  fi
+
+  printf -v "${key}" '%s' "${value}"
+  export "${key}"
 }
 
 local_wifi_ip() {
@@ -144,8 +170,48 @@ main() {
     exit 0
   fi
 
-  local camera_host="${1:-}"
-  local camera_user="${2:-${CAMERA_USER:-pi}}"
+  local input_target="${1:-}"
+  local camera_user_arg="${2:-}"
+  local camera_env_file="${CAMERA_ENV_FILE:-}"
+  local camera_host="${input_target}"
+  local camera_user="${camera_user_arg:-${CAMERA_USER:-pi}}"
+
+  if [[ -n "${input_target}" && -f "${input_target}" ]]; then
+    camera_env_file="${input_target}"
+    camera_host=""
+  fi
+
+  if [[ -n "${camera_env_file}" ]]; then
+    [[ -f "${camera_env_file}" ]] || err "Camera env file not found at ${camera_env_file}"
+
+    apply_env_default_from_file "${camera_env_file}" CAMERA_HOST
+    apply_env_default_from_file "${camera_env_file}" CAMERA_USER
+    apply_env_default_from_file "${camera_env_file}" CAMERA_ID
+    apply_env_default_from_file "${camera_env_file}" SERVER_URL
+    apply_env_default_from_file "${camera_env_file}" MOTION_THRESHOLD
+    apply_env_default_from_file "${camera_env_file}" MIN_CHANGED_PCT
+    apply_env_default_from_file "${camera_env_file}" CAPTURE_FPS
+    apply_env_default_from_file "${camera_env_file}" CAPTURE_MIN_DURATION
+    apply_env_default_from_file "${camera_env_file}" COOLDOWN_SECONDS
+    apply_env_default_from_file "${camera_env_file}" HEARTBEAT_INTERVAL
+    apply_env_default_from_file "${camera_env_file}" LORES_WIDTH
+    apply_env_default_from_file "${camera_env_file}" LORES_HEIGHT
+    apply_env_default_from_file "${camera_env_file}" MAIN_WIDTH
+    apply_env_default_from_file "${camera_env_file}" MAIN_HEIGHT
+    apply_env_default_from_file "${camera_env_file}" FRAME_QUEUE_DIR
+    apply_env_default_from_file "${camera_env_file}" WIFI_POWER_SAVE
+    apply_env_default_from_file "${camera_env_file}" WIFI_STARTUP_GRACE_SECONDS
+    apply_env_default_from_file "${camera_env_file}" ENABLE_CAMERA_SERVICE
+    apply_env_default_from_file "${camera_env_file}" START_CAMERA
+
+    if [[ -z "${camera_host}" ]]; then
+      camera_host="${CAMERA_HOST:-}"
+    fi
+
+    if [[ -z "${camera_user_arg}" ]]; then
+      camera_user="${CAMERA_USER:-${camera_user}}"
+    fi
+  fi
 
   if [[ -z "${camera_host}" ]]; then
     usage
@@ -156,11 +222,19 @@ main() {
   require_command rsync
   require_command scp
 
+  if [[ -n "${ENABLE_CAMERA_SERVICE:-}" ]] && [[ "${ENABLE_CAMERA_SERVICE}" != "true" ]] && [[ "${ENABLE_CAMERA_SERVICE}" != "false" ]]; then
+    err "ENABLE_CAMERA_SERVICE must be true or false when set"
+  fi
+
+  if [[ -n "${START_CAMERA:-}" ]] && [[ "${START_CAMERA}" != "true" ]] && [[ "${START_CAMERA}" != "false" ]]; then
+    err "START_CAMERA must be true or false when set"
+  fi
+
   [[ -f "${ROOT_ENV}" ]] || err "Root .env not found at ${ROOT_ENV}"
   [[ -d "${CAMERA_SRC}" ]] || err "Camera source not found at ${CAMERA_SRC}"
 
   local api_key
-  api_key="$(read_env_value PIWATCHER_API_KEY)"
+  api_key="$(read_env_value "${ROOT_ENV}" PIWATCHER_API_KEY)"
   [[ -n "${api_key}" ]] || err "PIWATCHER_API_KEY is missing from ${ROOT_ENV}"
 
   local server_url="${SERVER_URL:-}"
@@ -173,6 +247,7 @@ main() {
 
   local camera_id="${CAMERA_ID:-${camera_host%.local}}"
   local remote="${camera_user}@${camera_host}"
+  local setup_enable_override=""
   local tmp_dir
   tmp_dir="$(mktemp -d)"
   local control_path="${tmp_dir}/ssh-control"
@@ -183,6 +258,10 @@ main() {
 
   local camera_env="${tmp_dir}/camera.env"
   write_camera_env "${camera_env}" "${camera_id}" "${server_url}" "${api_key}"
+
+  if [[ -n "${ENABLE_CAMERA_SERVICE:-}" ]]; then
+    setup_enable_override=" ENABLE_CAMERA_SERVICE=${ENABLE_CAMERA_SERVICE}"
+  fi
 
   printf "Deploying camera '%s' to %s with server %s\n" \
     "${camera_id}" \
@@ -208,13 +287,15 @@ main() {
     "${camera_env}" \
     "${remote}:~/piwatcher/.env"
   ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
-    "chmod +x ~/setup-camera.sh && sudo env PIWATCHER_USER=${camera_user} PIWATCHER_HOME=/home/${camera_user} ENABLE_CAMERA_SERVICE=${ENABLE_CAMERA_SERVICE:-false} ~/setup-camera.sh"
+    "chmod +x ~/setup-camera.sh && sudo env PIWATCHER_USER=${camera_user} PIWATCHER_HOME=/home/${camera_user}${setup_enable_override} ~/setup-camera.sh"
 
-  if [[ "${START_CAMERA:-false}" == "true" ]]; then
+  if [[ "${START_CAMERA:-}" == "true" ]]; then
     ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" "sudo systemctl restart piwatcher-camera.service && sudo systemctl status --no-pager piwatcher-camera.service"
-  else
+  elif [[ "${START_CAMERA:-}" == "false" ]]; then
     ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" "sudo systemctl stop piwatcher-camera.service >/dev/null 2>&1 || true"
-    printf "Camera service is deployed but not started. Use START_CAMERA=true to start it.\n"
+    printf "Camera service stopped after deploy (START_CAMERA=false).\n"
+  else
+    printf "Camera service run state preserved. Set START_CAMERA=true|false to override.\n"
   fi
 }
 

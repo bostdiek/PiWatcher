@@ -14,7 +14,7 @@ readonly FIRMWARE_CONFIG="/boot/firmware/config.txt"
 readonly PIWATCHER_USER="${PIWATCHER_USER:-${SUDO_USER:-pi}}"
 readonly PIWATCHER_HOME="${PIWATCHER_HOME:-/home/${PIWATCHER_USER}}"
 readonly PROJECT_DIR="${PIWATCHER_HOME}/piwatcher"
-readonly ENABLE_CAMERA_SERVICE="${ENABLE_CAMERA_SERVICE:-false}"
+readonly ENABLE_CAMERA_SERVICE="${ENABLE_CAMERA_SERVICE:-preserve}"
 
 err() {
   printf "ERROR: %s\n" "$1" >&2
@@ -68,11 +68,19 @@ install_service() {
     -e "s|^WorkingDirectory=.*|WorkingDirectory=${PROJECT_DIR}|" \
     "${source_service}" >"/etc/systemd/system/${SERVICE_NAME}"
   systemctl daemon-reload
-  if [[ "${ENABLE_CAMERA_SERVICE}" == "true" ]]; then
-    systemctl enable "${SERVICE_NAME}"
-  else
-    systemctl disable "${SERVICE_NAME}" >/dev/null 2>&1 || true
-  fi
+  case "${ENABLE_CAMERA_SERVICE}" in
+    true)
+      systemctl enable "${SERVICE_NAME}"
+      ;;
+    false)
+      systemctl disable "${SERVICE_NAME}" >/dev/null 2>&1 || true
+      ;;
+    preserve|"")
+      ;;
+    *)
+      err "ENABLE_CAMERA_SERVICE must be true, false, or preserve"
+      ;;
+  esac
 }
 
 main() {
