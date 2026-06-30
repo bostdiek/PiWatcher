@@ -56,8 +56,13 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         await init_db()
     if SessionLocal is None:
         raise RuntimeError("Database session factory was not initialized")
-    async with SessionLocal() as session:
+    session = SessionLocal()
+    try:
         yield session
+    finally:
+        if session.in_transaction():
+            await session.rollback()
+        await session.close()
 
 
 @asynccontextmanager
@@ -68,5 +73,10 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
         await init_db()
     if SessionLocal is None:
         raise RuntimeError("Database session factory was not initialized")
-    async with SessionLocal() as session:
+    session = SessionLocal()
+    try:
         yield session
+    finally:
+        if session.in_transaction():
+            await session.rollback()
+        await session.close()
