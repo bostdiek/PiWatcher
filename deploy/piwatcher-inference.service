@@ -10,6 +10,7 @@ WorkingDirectory=/home/bostdiek/Projects/PiWatcher
 Environment=LLAMA_SWAP_CONFIG=/home/bostdiek/Projects/PiWatcher/deploy/llama-swap/config.yaml
 Environment=LLAMA_SWAP_LISTEN=127.0.0.1:8080
 EnvironmentFile=-/home/bostdiek/Projects/PiWatcher/.env
+ExecStartPre=/usr/bin/bash /home/bostdiek/Projects/PiWatcher/deploy/setup-llama-swap.sh
 ExecStart=/home/bostdiek/.local/bin/llama-swap --config ${LLAMA_SWAP_CONFIG} --listen ${LLAMA_SWAP_LISTEN}
 Restart=on-failure
 RestartSec=10

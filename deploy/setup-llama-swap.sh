@@ -17,6 +17,7 @@ readonly DEFAULT_LLAMA_SWAP_MODEL="lfm2.5-vl-450m-q4_0"
 readonly DEFAULT_LLAMA_SWAP_MODELS_DIR="/home/bostdiek/piwatcher/models"
 readonly DEFAULT_LLAMA_SWAP_MODEL_FILE="LFM2.5-VL-450M-Q4_0.gguf"
 readonly DEFAULT_LLAMA_SWAP_MEDIA_PATH="/home/bostdiek/Downloads"
+readonly DEFAULT_LLAMA_CONTEXT_SIZE="4096"
 
 err() {
   printf "ERROR: %s\n" "$1" >&2
@@ -81,6 +82,7 @@ write_config() {
   local mmproj_path="$4"
   local media_path="$5"
   local runtime="$6"
+  local context_size="$7"
 
   mkdir -p "$(dirname "${CONFIG_FILE}")"
 
@@ -99,7 +101,7 @@ write_config() {
     cat >"${CONFIG_FILE}" <<EOF
 models:
   ${model_id}:
-    cmd: llama-server --host 127.0.0.1 --port \${PORT} --model /models/${model_file}${mmproj_arg}
+    cmd: llama-server --host 127.0.0.1 --port \${PORT} --model /models/${model_file} --ctx-size ${context_size}${mmproj_arg}
     ttl: 300
 EOF
     return
@@ -113,7 +115,7 @@ models:
       --model ${model_path}
       --host 127.0.0.1
       --port \${PORT}
-      --ctx-size 1000
+      --ctx-size ${context_size}
       --cache-ram 512
       --media-path ${media_path}
 EOF
@@ -165,6 +167,7 @@ main() {
   local llama_server_bin
   local listen_address
   local media_path
+  local context_size
   local runtime
 
   llama_swap_bin="$(setting_value LLAMA_SWAP_BIN "${DEFAULT_LLAMA_SWAP_BIN}")"
@@ -177,7 +180,12 @@ main() {
   model_url="$(setting_value LLAMA_SWAP_MODEL_URL "")"
   mmproj_url="$(setting_value LLAMA_SWAP_MMPROJ_URL "")"
   media_path="$(setting_value LLAMA_SWAP_MEDIA_PATH "${DEFAULT_LLAMA_SWAP_MEDIA_PATH}")"
+  context_size="$(setting_value LLAMA_CONTEXT_SIZE "${DEFAULT_LLAMA_CONTEXT_SIZE}")"
   runtime="$(setting_value LLAMA_SWAP_RUNTIME "host")"
+
+  if ! [[ "${context_size}" =~ ^[0-9]+$ ]] || (( context_size < 512 )); then
+    err "LLAMA_CONTEXT_SIZE must be an integer >= 512: ${context_size}"
+  fi
 
   local model_path="${models_dir}/${model_file}"
   local mmproj_path=""
@@ -219,7 +227,8 @@ main() {
     "${model_path}" \
     "${mmproj_path}" \
     "${media_path}" \
-    "${runtime}"
+    "${runtime}" \
+    "${context_size}"
 
   printf "Wrote llama-swap config: %s\n" "${CONFIG_FILE}"
 

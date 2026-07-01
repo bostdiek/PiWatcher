@@ -3,6 +3,11 @@
 import asyncio
 import json
 import logging
+import os
+import re
+import shutil
+from collections import deque
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Annotated, Any
@@ -31,7 +36,27 @@ templates = Jinja2Templates(directory=TEMPLATE_DIR)
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 CameraIdForm = Annotated[str, Form(...)]
 LOG_LOOKBACK_MINUTES = 15
+BASE_CPU_WINDOW_MINUTES = 15
 LOG_UNITS = ("piwatcher-base.service", "piwatcher-inference.service")
+INFERENCE_LOG_KEYWORDS = (
+    "starting inference",
+    "finished inference",
+    "failed to classify",
+    "inference endpoint",
+    "chat/completions",
+    "mmproj",
+    "llama-swap",
+)
+
+INFERENCE_ERROR_KEYWORDS = (
+    "http 500",
+    "failed to classify",
+    "server_error",
+    "traceback",
+    "exception",
+)
+
+BASE_CPU_HISTORY: deque[tuple[datetime, float]] = deque()
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -116,6 +141,20 @@ async def health_page(
 
     cameras = await fetch_camera_health(session, include_archived=show_archived)
     chart_data = await fetch_telemetry_history(session, include_archived=show_archived)
+    base_health = await read_base_host_health()
+    inference_activity = await read_recent_inference_activity(
+        session,
+        lookback_minutes=BASE_CPU_WINDOW_MINUTES,
+    )
+    base_cpu_chart = base_health.get(
+        "cpu_temp_history",
+        {
+            "labels": [],
+            "values": [],
+            "lookback_minutes": BASE_CPU_WINDOW_MINUTES,
+            "latest_value": None,
+        },
+    )
     return templates.TemplateResponse(
         request,
         "health.html",
@@ -123,15 +162,54 @@ async def health_page(
             "cameras": await fetch_camera_ids(session),
             "cameras_health": cameras,
             "chart_data_json": json.dumps(chart_data),
+            "base_health": base_health,
+            "base_cpu_chart_json": json.dumps(base_cpu_chart),
+            "inference_activity": inference_activity,
+            "inference_log_view": await read_recent_inference_logs(),
             "selected_camera_id": None,
             "show_archived": show_archived,
         },
     )
 
 
+async def read_recent_inference_activity(
+    session: AsyncSession,
+    *,
+    lookback_minutes: int,
+) -> dict[str, int]:
+    """Summarize recent inference throughput for host thermal diagnostics."""
+
+    since = datetime.now(UTC) - timedelta(minutes=lookback_minutes)
+    recent_payloads = (
+        await session.scalars(
+            select(Event.raw_classification)
+            .where(Event.classified_at.is_not(None), Event.classified_at >= since)
+            .order_by(Event.classified_at.desc())
+        )
+    ).all()
+
+    sample_count = 0
+    for payload in recent_payloads:
+        if isinstance(payload, dict):
+            samples = payload.get("samples")
+            if isinstance(samples, list) and samples:
+                sample_count += len(samples)
+                continue
+        sample_count += 1
+
+    return {
+        "lookback_minutes": lookback_minutes,
+        "event_count": len(recent_payloads),
+        "sample_count": sample_count,
+    }
+
+
 @router.get("/logs", response_class=HTMLResponse)
 async def logs_page(request: Request, session: DbSession) -> HTMLResponse:
     """Render recent base-station runtime logs."""
+
+    log_view = await read_recent_service_logs()
+    inference_log_view = build_inference_log_view(log_view)
 
     return templates.TemplateResponse(
         request,
@@ -139,7 +217,8 @@ async def logs_page(request: Request, session: DbSession) -> HTMLResponse:
         {
             "cameras": await fetch_camera_ids(session),
             "selected_camera_id": None,
-            "log_view": await read_recent_service_logs(),
+            "log_view": log_view,
+            "inference_log_view": inference_log_view,
         },
     )
 
@@ -303,6 +382,11 @@ async def fetch_telemetry_history(
                 "queued_frames": metric_series(values, "queue_depth"),
                 "queued_events": metric_series(values, "queued_event_count"),
                 "temperature": metric_series(values, "cpu_temp_c"),
+                "temperature_15m": metric_series(
+                    values,
+                    "cpu_temp_c",
+                    window_minutes=BASE_CPU_WINDOW_MINUTES,
+                ),
                 "disk": metric_series(values, "disk_free_mb"),
             },
         }
@@ -310,7 +394,12 @@ async def fetch_telemetry_history(
     ]
 
 
-def metric_series(heartbeats: list[Heartbeat], attribute: str) -> dict[str, object]:
+def metric_series(
+    heartbeats: list[Heartbeat],
+    attribute: str,
+    *,
+    window_minutes: int | None = None,
+) -> dict[str, object]:
     """Return chart labels and values for one nullable heartbeat metric."""
 
     points = [
@@ -318,9 +407,19 @@ def metric_series(heartbeats: list[Heartbeat], attribute: str) -> dict[str, obje
         for heartbeat in heartbeats
         if getattr(heartbeat, attribute) is not None
     ]
+
+    if window_minutes is not None:
+        cutoff = datetime.now(UTC) - timedelta(minutes=window_minutes)
+        points = [
+            (created_at, value)
+            for created_at, value in points
+            if created_at is not None and created_at >= cutoff
+        ]
+
     return {
         "labels": [format_time(created_at) for created_at, _value in points],
         "values": [value for _created_at, value in points],
+        "latest_value": points[-1][1] if points else None,
     }
 
 
@@ -378,6 +477,227 @@ async def read_recent_service_logs(
     )
 
 
+async def read_recent_inference_logs(
+    lookback_minutes: int = LOG_LOOKBACK_MINUTES,
+) -> dict[str, object]:
+    """Return recent inference-related journal lines across base + inference units."""
+
+    log_view = await read_recent_service_logs(lookback_minutes=lookback_minutes)
+    return build_inference_log_view(log_view)
+
+
+def build_inference_log_view(log_view: dict[str, object]) -> dict[str, object]:
+    """Filter and summarize inference-related lines from a full log view."""
+
+    if log_view.get("error_message"):
+        return {
+            **log_view,
+            "lines": [],
+            "display_lines": [],
+            "has_entries": False,
+            "filtered_count": 0,
+            "title": "Inference activity",
+            "summary": summarize_inference_lines([]),
+        }
+
+    raw_lines = log_view.get("lines", [])
+    candidate_lines = raw_lines if isinstance(raw_lines, list) else []
+    lines = [
+        line
+        for line in candidate_lines
+        if isinstance(line, str)
+        and any(keyword in line.lower() for keyword in INFERENCE_LOG_KEYWORDS)
+    ]
+    return {
+        **log_view,
+        "lines": lines,
+        "display_lines": list(reversed(lines)),
+        "has_entries": bool(lines),
+        "filtered_count": len(lines),
+        "title": "Inference activity",
+        "summary": summarize_inference_lines(lines),
+    }
+
+
+def summarize_inference_lines(lines: list[str]) -> dict[str, object]:
+    """Build compact inference diagnostics from filtered log lines."""
+
+    lowered = [line.lower() for line in lines]
+    error_count = sum(
+        1 for line in lowered if any(keyword in line for keyword in INFERENCE_ERROR_KEYWORDS)
+    )
+    http_500_count = sum(1 for line in lowered if "http 500" in line)
+    mmproj_error_count = sum(
+        1 for line in lowered if "mmproj" in line or "image input is not supported" in line
+    )
+    success_count = sum(
+        1
+        for line in lowered
+        if "finished inference" in line
+        or re.search(r"chat/completions.*\"\s*200(?:\s|$)", line) is not None
+    )
+
+    status = "Idle"
+    if success_count > 0 and error_count == 0:
+        status = "Healthy"
+    elif success_count > 0 and error_count > 0:
+        status = "Degraded"
+    elif error_count > 0:
+        status = "Failing"
+
+    latest_error = next(
+        (
+            line
+            for line in reversed(lines)
+            if any(keyword in line.lower() for keyword in INFERENCE_ERROR_KEYWORDS)
+        ),
+        None,
+    )
+
+    return {
+        "status": status,
+        "line_count": len(lines),
+        "success_count": success_count,
+        "error_count": error_count,
+        "http_500_count": http_500_count,
+        "mmproj_error_count": mmproj_error_count,
+        "latest_error": latest_error,
+    }
+
+
+async def read_base_host_health() -> dict[str, object]:
+    """Return base host health and service status for dashboard diagnostics."""
+
+    settings = get_settings()
+    storage_path = settings.frame_storage_path
+    usage_base = storage_path if storage_path.exists() else storage_path.parent
+    disk_total_bytes = None
+    disk_used_bytes = None
+    disk_free_bytes = None
+    disk_used_pct = None
+    try:
+        usage = shutil.disk_usage(usage_base)
+        disk_total_bytes = usage.total
+        disk_used_bytes = usage.used
+        disk_free_bytes = usage.free
+        if usage.total > 0:
+            disk_used_pct = (usage.used / usage.total) * 100
+    except OSError:
+        logger.warning("Unable to read disk usage for %s", usage_base)
+
+    load_1m = None
+    load_5m = None
+    load_15m = None
+    with suppress(OSError):
+        load_1m, load_5m, load_15m = os.getloadavg()
+
+    uptime_seconds = None
+    try:
+        uptime_text = Path("/proc/uptime").read_text(encoding="utf-8").strip()
+        uptime_seconds = int(float(uptime_text.split()[0]))
+    except (OSError, ValueError, IndexError):
+        pass
+
+    generated_at = datetime.now(UTC)
+    cpu_temp_c = read_host_cpu_temp_c()
+    update_base_cpu_history(generated_at, cpu_temp_c)
+    service_states = await read_service_states(LOG_UNITS)
+
+    return {
+        "generated_at": generated_at,
+        "cpu_temp_c": cpu_temp_c,
+        "cpu_temp_history": build_base_cpu_history_view(),
+        "uptime_seconds": uptime_seconds,
+        "load_1m": load_1m,
+        "load_5m": load_5m,
+        "load_15m": load_15m,
+        "frame_storage_path": str(storage_path),
+        "disk_total_bytes": disk_total_bytes,
+        "disk_used_bytes": disk_used_bytes,
+        "disk_free_bytes": disk_free_bytes,
+        "disk_used_pct": disk_used_pct,
+        "service_states": service_states,
+    }
+
+
+def update_base_cpu_history(sampled_at: datetime, cpu_temp_c: float | None) -> None:
+    """Append one base CPU sample and prune points outside the short trend window."""
+
+    if cpu_temp_c is None:
+        return
+
+    BASE_CPU_HISTORY.append((sampled_at, cpu_temp_c))
+    cutoff = sampled_at - timedelta(minutes=BASE_CPU_WINDOW_MINUTES)
+    while BASE_CPU_HISTORY and BASE_CPU_HISTORY[0][0] < cutoff:
+        BASE_CPU_HISTORY.popleft()
+
+
+def build_base_cpu_history_view() -> dict[str, object]:
+    """Build display-ready base CPU trend data for the health page."""
+
+    cutoff = datetime.now(UTC) - timedelta(minutes=BASE_CPU_WINDOW_MINUTES)
+    while BASE_CPU_HISTORY and BASE_CPU_HISTORY[0][0] < cutoff:
+        BASE_CPU_HISTORY.popleft()
+
+    points = list(BASE_CPU_HISTORY)
+    return {
+        "labels": [format_time(sampled_at) for sampled_at, _temp_c in points],
+        "values": [temp_c for _sampled_at, temp_c in points],
+        "lookback_minutes": BASE_CPU_WINDOW_MINUTES,
+        "latest_value": points[-1][1] if points else None,
+    }
+
+
+async def read_service_states(
+    units: tuple[str, ...],
+) -> dict[str, dict[str, str | bool]]:
+    """Read active + enable states for systemd units."""
+
+    states: dict[str, dict[str, str | bool]] = {}
+    for unit in units:
+        states[unit] = {
+            "active": await systemctl_query(unit, "is-active"),
+            "enabled": await systemctl_query(unit, "is-enabled"),
+        }
+    return states
+
+
+async def systemctl_query(unit: str, command: str) -> str:
+    """Run one non-interactive systemctl query and return a normalized response."""
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "systemctl",
+            command,
+            unit,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        return "unavailable"
+
+    stdout, stderr = await process.communicate()
+    output = stdout.decode("utf-8", errors="replace").strip()
+    if output:
+        return output
+    error = stderr.decode("utf-8", errors="replace").strip()
+    if error:
+        return error.splitlines()[0]
+    return "unknown"
+
+
+def read_host_cpu_temp_c() -> float | None:
+    """Read host CPU temperature in Celsius when thermal zone files exist."""
+
+    temp_path = Path("/sys/class/thermal/thermal_zone0/temp")
+    if not temp_path.exists():
+        return None
+    try:
+        return float(temp_path.read_text(encoding="utf-8").strip()) / 1000.0
+    except (OSError, ValueError):
+        return None
+
+
 def format_log_view(
     *,
     lines: list[str],
@@ -387,13 +707,48 @@ def format_log_view(
 ) -> dict[str, object]:
     """Package log metadata for dashboard rendering."""
 
+    converted_lines = [localize_log_timestamp(line) for line in lines]
+
     return {
-        "lines": lines,
+        "lines": converted_lines,
+        "display_lines": list(reversed(converted_lines)),
         "error_message": error_message,
         "lookback_minutes": lookback_minutes,
         "units": list(units),
-        "has_entries": bool(lines),
+        "has_entries": bool(converted_lines),
+        "timezone_label": dashboard_timezone_label(),
+        "order": "newest_first",
     }
+
+
+def localize_log_timestamp(line: str) -> str:
+    """Convert an ISO timestamp prefix to the dashboard display timezone."""
+
+    if " " not in line:
+        return line
+
+    timestamp_text, remainder = line.split(" ", 1)
+    try:
+        parsed = datetime.fromisoformat(timestamp_text)
+    except ValueError:
+        return line
+
+    localized = normalize_datetime(parsed)
+    if localized is None:
+        return line
+    localized = localized.astimezone(display_timezone())
+    return f"{localized.strftime('%Y-%m-%d %H:%M:%S %Z')} {remainder}"
+
+
+def dashboard_timezone_label() -> str:
+    """Return a stable display label for dashboard-localized timestamps."""
+
+    timezone = display_timezone()
+    zone_name = getattr(timezone, "key", str(timezone))
+    abbreviation = datetime.now(timezone).strftime("%Z")
+    if abbreviation and abbreviation != zone_name:
+        return f"{zone_name} ({abbreviation})"
+    return zone_name
 
 
 def format_event_summary(event: Event) -> dict[str, Any]:

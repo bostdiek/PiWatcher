@@ -1,7 +1,7 @@
 ---
 title: PiWatcher
 description: Motion-triggered Raspberry Pi wildlife camera system with a Pi 5 base station, PostgreSQL storage, and LAN dashboard.
-ms.date: 2026-06-28
+ms.date: 2026-07-01
 ms.topic: overview
 ---
 
@@ -168,6 +168,9 @@ LLAMA_SWAP_MEDIA_PATH=/home/bostdiek/Downloads
 
 The generated llama-swap config passes an explicit local `--model` path to `llama-server`. The `--model` option does not download model files. `deploy/setup-llama-swap.sh` downloads `LLAMA_SWAP_MODEL_URL` only when that URL is configured; otherwise, place `LLAMA_SWAP_MODELS_DIR/LLAMA_SWAP_MODEL_FILE` on disk before starting inference.
 
+> [!IMPORTANT]
+> For host inference, `.env` is the configuration source of truth. The `piwatcher-inference.service` unit runs `deploy/setup-llama-swap.sh` as an `ExecStartPre` step, which regenerates `deploy/llama-swap/config.yaml` before `llama-swap` starts. Update `.env` instead of editing `config.yaml` directly.
+
 Vision classification requires the matching multimodal projector. When `LLAMA_SWAP_MMPROJ_FILE` is configured, `deploy/setup-llama-swap.sh` also downloads `LLAMA_SWAP_MMPROJ_URL` when needed and adds `--mmproj` to the generated llama-server command.
 
 The Pi 5 boots from NVMe, so the default deployment paths use `bostdiek`-owned directories under `/home/bostdiek/piwatcher` instead of a separate `/mnt/nvme` mount.
@@ -192,13 +195,23 @@ START_INFERENCE=true make deploy-inference BASE=pi5.local BASE_USER=bostdiek
 Keep Pi-specific base settings in a private `pi5.env` file. `make deploy-base`
 copies `pi5.env` to the remote project as `.env` when the file exists, which
 keeps Mac development paths out of the Pi runtime. Use `BASE_ENV_FILE` to deploy
-a different local env profile.
+a different local env profile. Base deploy preserves the previous enabled/running
+service state by default. Set `START_INFERENCE=true` when you also want host
+inference config regenerated from `.env` and host inference restarted after base
+deploy. Set `BACKFILL_INFERENCE=true` to launch a bounded one-shot backfill for
+pending events after deploy.
 
 ```bash
 cp pi5.env.example pi5.env
+make deploy-base BASE=pi5.local BASE_USER=bostdiek
 START_BASE=true ENABLE_BASE_SERVICE=true make deploy-base BASE=pi5.local BASE_USER=bostdiek
+START_BASE=true START_INFERENCE=true make deploy-base BASE=pi5.local BASE_USER=bostdiek
+START_BASE=true START_INFERENCE=true BACKFILL_INFERENCE=true BACKFILL_LIMIT=25 make deploy-base BASE=pi5.local BASE_USER=bostdiek
 BASE_ENV_FILE=staging.env make deploy-base BASE=pi5.local BASE_USER=bostdiek
 ```
+
+When `BACKFILL_INFERENCE=true`, deploy starts a background backfill process and
+writes output to `/tmp/piwatcher-backfill.log` on the Pi 5.
 
 Keep `mac.env`, `pi5.env`, and `.env` out of source control because they contain
 the shared API key and host-specific paths.
@@ -243,11 +256,21 @@ For local testing, deploy a camera from your Mac with a generated camera `.env` 
 make deploy-camera CAM=pizero.local CAMERA_USER=pizero
 ```
 
-That target detects your Mac's Wi-Fi IP for `SERVER_URL`, copies the camera source package, writes `/home/<user>/piwatcher/.env`, runs the setup script, and leaves the camera service stopped for local safety. Start it explicitly when you are ready to test capture:
+That target detects your Mac's Wi-Fi IP for `SERVER_URL`, copies the camera source package, writes `/home/<user>/piwatcher/.env`, runs the setup script, and preserves the current camera service run state. Use `START_CAMERA=true|false` to override:
 
 ```bash
 START_CAMERA=true make deploy-camera CAM=pizero.local CAMERA_USER=pizero
 ```
+
+For repeat deployments, keep per-camera values in env profiles and deploy by file path:
+
+```bash
+cp deploy/cameras/camera-profile.env.example deploy/cameras/roomtest.env
+make deploy-camera CAMERA_ENV_FILE=deploy/cameras/roomtest.env
+START_CAMERA=true make deploy-camera CAMERA_ENV_FILE=deploy/cameras/roomtest.env
+```
+
+`CAMERA_ENV_FILE` supports keys such as `CAMERA_HOST`, `CAMERA_USER`, `CAMERA_ID`, and `SERVER_URL`.
 
 Enable camera startup on boot only when the node is ready for unattended operation:
 
@@ -261,7 +284,7 @@ Provision each Pi Zero manually when you want to run setup without writing the c
 make setup-camera CAM=feeder-cam.local
 ```
 
-The setup script installs Raspberry Pi camera dependencies, enables I2C for PiSugar battery readings, configures passwordless `rfkill` access for Wi-Fi power control, and installs the systemd service. It leaves the service disabled unless `ENABLE_CAMERA_SERVICE=true` is set.
+The setup script installs Raspberry Pi camera dependencies, enables I2C for PiSugar battery readings, configures passwordless `rfkill` access for Wi-Fi power control, and installs the systemd service. It preserves the current enabled/disabled service state unless `ENABLE_CAMERA_SERVICE=true|false` is provided.
 
 Create `/home/pi/piwatcher/.env` on each camera:
 
@@ -479,8 +502,8 @@ After camera rollout, evaluate legacy loose files with inventory or quarantine b
 | `make base-inference-up`       | Alias for explicit local/development inference startup                                                                |
 | `make base-migrate`            | Apply Alembic migrations for the base station database                                                                |
 | `make base-up`                 | Start PostgreSQL, apply migrations, and run the base server. Add `ENABLE_INFERENCE=true` to start local inference too |
-| `make deploy-base`             | Deploy the base app and copy `pi5.env` to the Pi as `.env` when present                                               |
-| `make deploy-camera`           | Generate camera config locally, rsync code/config, run setup, and leave the camera stopped unless `START_CAMERA=true` |
+| `make deploy-base`             | Deploy base app, copy `pi5.env`, preserve service state, and optionally restart inference/backfill                    |
+| `make deploy-camera`           | Generate camera config locally or from `CAMERA_ENV_FILE`, deploy files, run setup, and preserve run state             |
 | `make update-cameras`          | Rsync camera package code and restart camera services                                                                 |
 | `make setup-camera CAM=<host>` | Copy and run the first-time Pi Zero provisioning script                                                               |
 

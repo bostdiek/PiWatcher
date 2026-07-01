@@ -8,7 +8,7 @@
             <p class="text-sm uppercase tracking-wide text-emerald-300">Troubleshooting</p>
             <h1 class="text-3xl font-semibold text-white">Base Logs</h1>
         </div>
-        <p class="text-sm text-gray-400">Showing the last {{ log_view.lookback_minutes }} minutes from {{ log_view.units | join(", ") }}.</p>
+        <p class="text-sm text-gray-400">Showing the last {{ log_view.lookback_minutes }} minutes from {{ log_view.units | join(", ") }}. Times shown in {{ log_view.timezone_label or "local host time" }}.</p>
     </div>
 
     {% if log_view.error_message %}
@@ -17,9 +17,55 @@
     </div>
     {% endif %}
 
+    {% set summary = inference_log_view.summary %}
+    <div class="grid gap-4 lg:grid-cols-2">
+        <article class="rounded-xl border border-gray-800 bg-gray-900 p-4">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <p class="text-sm uppercase tracking-wide text-emerald-300">Inference diagnostics</p>
+                    <h2 class="text-xl font-semibold text-white">Quick status</h2>
+                </div>
+                <span class="rounded-full px-3 py-1 text-sm font-medium {% if summary.status == 'Healthy' %}bg-emerald-400/10 text-emerald-300{% elif summary.status == 'Degraded' %}bg-amber-400/10 text-amber-300{% elif summary.status == 'Failing' %}bg-red-400/10 text-red-300{% else %}bg-gray-700 text-gray-200{% endif %}">{{ summary.status }}</span>
+            </div>
+            <dl class="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">Inference lines</dt>
+                    <dd class="text-lg font-semibold text-white">{{ summary.line_count }}</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">Success lines</dt>
+                    <dd class="text-lg font-semibold text-white">{{ summary.success_count }}</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">Error lines</dt>
+                    <dd class="text-lg font-semibold {% if summary.error_count > 0 %}text-red-300{% else %}text-white{% endif %}">{{ summary.error_count }}</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">HTTP 500</dt>
+                    <dd class="text-lg font-semibold {% if summary.http_500_count > 0 %}text-red-300{% else %}text-white{% endif %}">{{ summary.http_500_count }}</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">mmproj-related</dt>
+                    <dd class="text-lg font-semibold {% if summary.mmproj_error_count > 0 %}text-red-300{% else %}text-white{% endif %}">{{ summary.mmproj_error_count }}</dd>
+                </div>
+            </dl>
+            {% if summary.latest_error %}
+            <div class="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                <p class="font-semibold uppercase tracking-wide">Latest error</p>
+                <p class="mt-1 break-words">{{ summary.latest_error }}</p>
+            </div>
+            {% endif %}
+        </article>
+
+        <article class="overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-lg shadow-black/20">
+            <div class="border-b border-gray-800 px-4 py-3 text-sm text-gray-400">Inference activity (filtered)</div>
+            <pre class="max-h-72 overflow-x-auto overflow-y-auto px-4 py-4 text-xs leading-6 text-gray-200">{% if inference_log_view.has_entries %}{{ (inference_log_view.display_lines | default(inference_log_view.lines, true)) | join('\n') }}{% else %}No inference-specific lines found in this lookback window.{% endif %}</pre>
+        </article>
+    </div>
+
     <div class="overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-lg shadow-black/20">
         <div class="border-b border-gray-800 px-4 py-3 text-sm text-gray-400">Runtime journal</div>
-        <pre class="max-h-[70vh] overflow-x-auto overflow-y-auto px-4 py-4 text-xs leading-6 text-gray-200">{% if log_view.has_entries %}{{ log_view.lines | join('\n') }}{% else %}No log entries found for the selected lookback window.{% endif %}</pre>
+        <pre class="max-h-[70vh] overflow-x-auto overflow-y-auto px-4 py-4 text-xs leading-6 text-gray-200">{% if log_view.has_entries %}{{ (log_view.display_lines | default(log_view.lines, true)) | join('\n') }}{% else %}No log entries found for the selected lookback window.{% endif %}</pre>
     </div>
 </section>
 {% endblock %}

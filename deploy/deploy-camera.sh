@@ -17,6 +17,13 @@ cleanup_remote=""
 cleanup_control_path=""
 cleanup_tmp_dir=""
 declare -a SSH_OPTIONS=(-4)
+declare -a TRANSFER_SSH_OPTIONS=(
+  -4
+  -o ControlMaster=auto
+  -o ControlPersist=10m
+  -o ServerAliveInterval=15
+  -o ServerAliveCountMax=4
+)
 
 err() {
   printf "ERROR: %s\n" "$1" >&2
@@ -52,6 +59,8 @@ Environment overrides:
                          unset preserves current enabled/disabled state
   START_CAMERA           Optional: true restarts, false stops,
                          unset preserves current running/stopped state
+  TRANSFER_RETRIES       Retry count for rsync/scp style transfers (default: 3)
+  TRANSFER_RETRY_DELAY_SECONDS Delay between transfer retries (default: 3)
 USAGE
 }
 
@@ -128,6 +137,32 @@ FRAME_QUEUE_DIR=${FRAME_QUEUE_DIR:-/tmp/piwatcher/frames}
 WIFI_POWER_SAVE=${WIFI_POWER_SAVE:-false}
 WIFI_STARTUP_GRACE_SECONDS=${WIFI_STARTUP_GRACE_SECONDS:-600}
 EOF
+}
+
+retry_command() {
+  local description="$1"
+  local max_attempts="$2"
+  local delay_seconds="$3"
+  shift 3
+
+  local attempt=1
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+
+    if (( attempt >= max_attempts )); then
+      err "${description} failed after ${max_attempts} attempts"
+    fi
+
+    printf "%s failed (attempt %s/%s). Retrying in %ss...\n" \
+      "${description}" \
+      "${attempt}" \
+      "${max_attempts}" \
+      "${delay_seconds}" >&2
+    attempt=$((attempt + 1))
+    sleep "${delay_seconds}"
+  done
 }
 
 open_ssh_master() {
@@ -248,6 +283,8 @@ main() {
   local camera_id="${CAMERA_ID:-${camera_host%.local}}"
   local remote="${camera_user}@${camera_host}"
   local setup_enable_override=""
+  local transfer_retries="${TRANSFER_RETRIES:-3}"
+  local transfer_retry_delay_seconds="${TRANSFER_RETRY_DELAY_SECONDS:-3}"
   local tmp_dir
   tmp_dir="$(mktemp -d)"
   local control_path="${tmp_dir}/ssh-control"
@@ -258,6 +295,14 @@ main() {
 
   local camera_env="${tmp_dir}/camera.env"
   write_camera_env "${camera_env}" "${camera_id}" "${server_url}" "${api_key}"
+
+  if ! [[ "${transfer_retries}" =~ ^[0-9]+$ ]] || (( transfer_retries < 1 )); then
+    err "TRANSFER_RETRIES must be an integer >= 1"
+  fi
+
+  if ! [[ "${transfer_retry_delay_seconds}" =~ ^[0-9]+$ ]] || (( transfer_retry_delay_seconds < 1 )); then
+    err "TRANSFER_RETRY_DELAY_SECONDS must be an integer >= 1"
+  fi
 
   if [[ -n "${ENABLE_CAMERA_SERVICE:-}" ]]; then
     setup_enable_override=" ENABLE_CAMERA_SERVICE=${ENABLE_CAMERA_SERVICE}"
@@ -271,21 +316,25 @@ main() {
   open_ssh_master "${remote}" "${control_path}"
 
   ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" "mkdir -p ~/piwatcher/deploy"
-  rsync \
-    -avz \
-    --delete \
-    -e "ssh -4 -o ControlPath=${control_path}" \
-    "${CAMERA_SRC}" \
-    "${remote}:~/piwatcher/"
-  scp "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" \
-    "${SETUP_SRC}" \
-    "${remote}:~/setup-camera.sh"
-  scp "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" \
-    "${SERVICE_SRC}" \
-    "${remote}:~/piwatcher/deploy/piwatcher-camera.service"
-  scp "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" \
-    "${camera_env}" \
-    "${remote}:~/piwatcher/.env"
+  retry_command "Camera source sync" "${transfer_retries}" "${transfer_retry_delay_seconds}" \
+    rsync \
+      -avz \
+      --delete \
+      -e "ssh ${TRANSFER_SSH_OPTIONS[*]} -o ControlPath=${control_path}" \
+      "${CAMERA_SRC}" \
+      "${remote}:~/piwatcher/"
+  retry_command "Setup script copy" "${transfer_retries}" "${transfer_retry_delay_seconds}" \
+    scp "${TRANSFER_SSH_OPTIONS[@]}" -o ControlPath="${control_path}" \
+      "${SETUP_SRC}" \
+      "${remote}:~/setup-camera.sh"
+  retry_command "Camera service unit copy" "${transfer_retries}" "${transfer_retry_delay_seconds}" \
+    scp "${TRANSFER_SSH_OPTIONS[@]}" -o ControlPath="${control_path}" \
+      "${SERVICE_SRC}" \
+      "${remote}:~/piwatcher/deploy/piwatcher-camera.service"
+  retry_command "Camera env copy" "${transfer_retries}" "${transfer_retry_delay_seconds}" \
+    scp "${TRANSFER_SSH_OPTIONS[@]}" -o ControlPath="${control_path}" \
+      "${camera_env}" \
+      "${remote}:~/piwatcher/.env"
   ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
     "chmod +x ~/setup-camera.sh && sudo env PIWATCHER_USER=${camera_user} PIWATCHER_HOME=/home/${camera_user}${setup_enable_override} ~/setup-camera.sh"
 
