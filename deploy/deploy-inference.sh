@@ -14,6 +14,13 @@ readonly SERVICE_SRC="${REPO_ROOT}/deploy/piwatcher-inference.service"
 readonly DEFAULT_MODELS_DIR="/home/bostdiek/piwatcher/models"
 
 declare -a SSH_OPTIONS=(-4)
+declare -a TRANSFER_SSH_OPTIONS=(
+  -4
+  -o ControlMaster=auto
+  -o ControlPersist=10m
+  -o ServerAliveInterval=15
+  -o ServerAliveCountMax=4
+)
 cleanup_remote=""
 cleanup_control_path=""
 cleanup_tmp_dir=""
@@ -32,6 +39,8 @@ Environment overrides:
   LLAMA_SWAP_MODELS_DIR     Model directory to create/chown before setup
   ENABLE_INFERENCE_SERVICE  Defaults to false
   START_INFERENCE           Defaults to false
+  TRANSFER_RETRIES          Retry count for rsync/scp style transfers (default: 3)
+  TRANSFER_RETRY_DELAY_SECONDS Delay between transfer retries (default: 3)
 USAGE
 }
 
@@ -70,6 +79,32 @@ setting_value() {
   fi
 
   printf "%s" "${value:-${default}}"
+}
+
+retry_command() {
+  local description="$1"
+  local max_attempts="$2"
+  local delay_seconds="$3"
+  shift 3
+
+  local attempt=1
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+
+    if (( attempt >= max_attempts )); then
+      err "${description} failed after ${max_attempts} attempts"
+    fi
+
+    printf "%s failed (attempt %s/%s). Retrying in %ss...\n" \
+      "${description}" \
+      "${attempt}" \
+      "${max_attempts}" \
+      "${delay_seconds}" >&2
+    attempt=$((attempt + 1))
+    sleep "${delay_seconds}"
+  done
 }
 
 open_ssh_master() {
@@ -130,6 +165,8 @@ main() {
   local project_dir="${BASE_PROJECT_DIR:-/home/${base_user}/Projects/PiWatcher}"
   local models_dir
   models_dir="$(setting_value LLAMA_SWAP_MODELS_DIR "${DEFAULT_MODELS_DIR}")"
+  local transfer_retries="${TRANSFER_RETRIES:-3}"
+  local transfer_retry_delay_seconds="${TRANSFER_RETRY_DELAY_SECONDS:-3}"
   local tmp_dir
   tmp_dir="$(mktemp -d)"
   local control_path="${tmp_dir}/ssh-control"
@@ -137,6 +174,14 @@ main() {
   cleanup_control_path="${control_path}"
   cleanup_tmp_dir="${tmp_dir}"
   trap cleanup EXIT
+
+  if ! [[ "${transfer_retries}" =~ ^[0-9]+$ ]] || (( transfer_retries < 1 )); then
+    err "TRANSFER_RETRIES must be an integer >= 1"
+  fi
+
+  if ! [[ "${transfer_retry_delay_seconds}" =~ ^[0-9]+$ ]] || (( transfer_retry_delay_seconds < 1 )); then
+    err "TRANSFER_RETRY_DELAY_SECONDS must be an integer >= 1"
+  fi
 
   printf "Deploying PiWatcher inference to %s:%s\n" \
     "${remote}" \
@@ -147,26 +192,27 @@ main() {
   ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
     "mkdir -p '${project_dir}'"
 
-  rsync \
-    -avz \
-    --delete \
-    --exclude .git \
-    --exclude .env \
-    --exclude .venv \
-    --exclude .ruff_cache \
-    --exclude .pytest_cache \
-    --exclude .mypy_cache \
-    --exclude .ty \
-    --exclude .vscode \
-    --exclude '._*' \
-    --exclude ._bryan \
-    --exclude dist \
-    --exclude build \
-    --exclude __pycache__ \
-    --exclude tmp \
-    -e "ssh -4 -o ControlPath=${control_path}" \
-    "${REPO_ROOT}/" \
-    "${remote}:${project_dir}/"
+  retry_command "Repository sync" "${transfer_retries}" "${transfer_retry_delay_seconds}" \
+    rsync \
+      -avz \
+      --delete \
+      --exclude .git \
+      --exclude .env \
+      --exclude .venv \
+      --exclude .ruff_cache \
+      --exclude .pytest_cache \
+      --exclude .mypy_cache \
+      --exclude .ty \
+      --exclude .vscode \
+      --exclude '._*' \
+      --exclude ._bryan \
+      --exclude dist \
+      --exclude build \
+      --exclude __pycache__ \
+      --exclude tmp \
+      -e "ssh ${TRANSFER_SSH_OPTIONS[*]} -o ControlPath=${control_path}" \
+      "${REPO_ROOT}/" \
+      "${remote}:${project_dir}/"
 
   ssh "${SSH_OPTIONS[@]}" -o ControlPath="${control_path}" "${remote}" \
     "sudo install -d -o '${base_user}' -g '${base_user}' '${models_dir}'"

@@ -45,6 +45,7 @@ async def test_given_heartbeat_telemetry_when_receive_then_records_camera_and_me
             "wifi_rssi_dbm": -62,
             "disk_free_mb": 2048,
             "queue_depth": 3,
+            "queued_event_count": 2,
             "cpu_temp_c": 54.2,
             "wifi_power_save": "false",
             "software_version": "0.1.0",
@@ -63,9 +64,33 @@ async def test_given_heartbeat_telemetry_when_receive_then_records_camera_and_me
     assert heartbeat.wifi_rssi_dbm == -62
     assert heartbeat.disk_free_mb == 2048
     assert heartbeat.queue_depth == 3
+    assert heartbeat.queued_event_count == 2
     assert heartbeat.cpu_temp_c == 54.2
     assert heartbeat.wifi_power_save is False
     assert heartbeat.software_version == "0.1.0"
+
+
+@pytest.mark.asyncio()
+async def test_given_heartbeat_without_queued_event_count_when_health_requested_then_reports_null(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    # Act
+    response = await client.post(
+        "/api/heartbeat",
+        data={
+            "camera_id": "legacy-cam",
+            "queue_depth": 7,
+        },
+        headers=auth_headers,
+    )
+    health_response = await client.get("/api/health/cameras")
+
+    # Assert
+    cameras = {item["camera_id"]: item for item in health_response.json()}
+    assert response.status_code == 200
+    assert cameras["legacy-cam"]["queue_depth"] == 7
+    assert cameras["legacy-cam"]["queued_event_count"] is None
 
 
 @pytest.mark.asyncio()

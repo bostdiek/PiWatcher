@@ -15,6 +15,7 @@ from fastapi import (
     status,
 )
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +33,7 @@ CameraIdForm = Annotated[str, Form(...)]
 EventStartForm = Annotated[str, Form(...)]
 EventEndForm = Annotated[str | None, Form()]
 BatteryPctForm = Annotated[int | None, Form()]
+CameraEventIdForm = Annotated[str | None, Form()]
 FramesFile = Annotated[list[UploadFile], File(...)]
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
@@ -43,6 +45,13 @@ def parse_datetime(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
+
+
+async def rollback_if_needed(session: AsyncSession) -> None:
+    """Rollback an open transaction before handing a session back to the pool."""
+
+    if session.in_transaction():
+        await session.rollback()
 
 
 @router.post(
@@ -58,6 +67,7 @@ async def create_event(
     session: DbSession,
     event_end: EventEndForm = None,
     battery_pct: BatteryPctForm = None,
+    camera_event_id: CameraEventIdForm = None,
 ) -> dict[str, int | str]:
     """Receive camera frames, persist metadata, and queue inference."""
 
@@ -69,6 +79,22 @@ async def create_event(
 
     started_at = parse_datetime(event_start)
     ended_at = parse_datetime(event_end) if event_end else None
+
+    if camera_event_id:
+        existing = await session.scalar(
+            select(Event).where(
+                Event.camera_id == camera_id,
+                Event.camera_event_id == camera_event_id,
+            )
+        )
+        if existing is not None:
+            existing_event_id = existing.id
+            await rollback_if_needed(session)
+            await session.close()
+            return {"event_id": existing_event_id, "status": "accepted"}
+
+        await rollback_if_needed(session)
+
     stored_paths = await store_frames(
         frames,
         camera_id,
@@ -81,6 +107,7 @@ async def create_event(
 
     event = Event(
         camera_id=camera_id,
+        camera_event_id=camera_event_id,
         event_start=started_at,
         event_end=ended_at,
         frame_count=len(stored_paths),
@@ -91,12 +118,31 @@ async def create_event(
         for index, path in enumerate(stored_paths)
     ]
     session.add(event)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        if camera_event_id:
+            existing = await session.scalar(
+                select(Event).where(
+                    Event.camera_id == camera_id,
+                    Event.camera_event_id == camera_event_id,
+                )
+            )
+            if existing is not None:
+                existing_event_id = existing.id
+                await rollback_if_needed(session)
+                await session.close()
+                return {"event_id": existing_event_id, "status": "accepted"}
+        raise
     await session.refresh(event)
+    event_id = event.id
+    event_camera_id = event.camera_id
+    await session.close()
 
-    background_tasks.add_task(classify_event_background, event.id, stored_paths)
-    background_tasks.add_task(broadcast_event_created, event.id, event.camera_id)
-    return {"event_id": event.id, "status": "accepted"}
+    background_tasks.add_task(classify_event_background, event_id, stored_paths)
+    background_tasks.add_task(broadcast_event_created, event_id, event_camera_id)
+    return {"event_id": event_id, "status": "accepted"}
 
 
 @router.get("/events")

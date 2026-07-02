@@ -12,6 +12,7 @@ from typing import Any, Literal, cast
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from .config import Settings, get_settings
 from .db import session_scope
@@ -38,6 +39,9 @@ ALLOWED_LABELS: tuple[str, ...] = (
     "unknown",
     "empty",
 )
+
+THERMAL_WAIT_INTERVAL_SECONDS = 5
+THERMAL_WAIT_TIMEOUT_SECONDS = 120
 
 WildlifeLabel = Literal[
     "deer",
@@ -81,9 +85,9 @@ LABEL_ALIASES: dict[str, WildlifeLabel] = {
 class WildlifeClassification(BaseModel):
     """Validated wildlife classification result."""
 
+    description: str = Field(max_length=200)
     label: WildlifeLabel
     confidence: float = Field(ge=0.0, le=1.0)
-    description: str = Field(max_length=200)
 
 
 def classification_prompt_text() -> str:
@@ -91,7 +95,9 @@ def classification_prompt_text() -> str:
 
     return (
         "What is the main thing visible in this image? "
-        "Choose the closest label from the schema and describe only what you actually see. "
+        "First write a short factual description of only what you can see. "
+        "Then choose the closest label only from what is seen and described. "
+        "Finally provide confidence from 0.0 to 1.0. "
         "Use unknown if the subject is unclear and empty if nothing relevant is visible."
     )
 
@@ -107,6 +113,10 @@ def response_format_json_schema() -> dict[str, Any]:
             "schema": {
                 "type": "object",
                 "properties": {
+                    "description": {
+                        "type": "string",
+                        "maxLength": 200,
+                    },
                     "label": {
                         "type": "string",
                         "enum": list(ALLOWED_LABELS),
@@ -116,12 +126,8 @@ def response_format_json_schema() -> dict[str, Any]:
                         "minimum": 0,
                         "maximum": 1,
                     },
-                    "description": {
-                        "type": "string",
-                        "maxLength": 200,
-                    },
                 },
-                "required": ["label", "confidence", "description"],
+                "required": ["description", "label", "confidence"],
                 "additionalProperties": False,
             },
         },
@@ -254,10 +260,27 @@ def sample_frame_paths(frame_paths: list[Path], sample_count: int = 5) -> list[P
 async def wait_for_safe_temperature(settings: Settings) -> None:
     """Pause inference while CPU temperature is above the configured ceiling."""
 
-    if get_cpu_temp() <= settings.max_inference_temp_c:
+    current_temp = get_cpu_temp()
+    if current_temp <= settings.max_inference_temp_c:
         return
-    while get_cpu_temp() > settings.cooldown_temp_c:
-        await asyncio.sleep(5)
+
+    waited_seconds = 0
+    while current_temp > settings.cooldown_temp_c:
+        if waited_seconds >= THERMAL_WAIT_TIMEOUT_SECONDS:
+            logger.warning(
+                (
+                    "CPU temperature %.1fC stayed above cooldown target %.1fC for %ss; "
+                    "continuing inference to avoid permanently pending events"
+                ),
+                current_temp,
+                settings.cooldown_temp_c,
+                THERMAL_WAIT_TIMEOUT_SECONDS,
+            )
+            return
+
+        await asyncio.sleep(THERMAL_WAIT_INTERVAL_SECONDS)
+        waited_seconds += THERMAL_WAIT_INTERVAL_SECONDS
+        current_temp = get_cpu_temp()
 
 
 def choose_classification(
@@ -354,3 +377,49 @@ async def classify_event_background(event_id: int, frame_paths: list[Path]) -> N
                 ntfy_url=settings.ntfy_url,
                 ntfy_topic=settings.ntfy_topic,
             )
+
+
+async def backfill_pending_inference(limit: int = 25) -> int:
+    """Attempt inference for a bounded number of oldest pending events."""
+
+    if limit < 1:
+        return 0
+
+    async with session_scope() as session:
+        pending_events = (
+            await session.scalars(
+                select(Event)
+                .options(selectinload(Event.frames))
+                .where(Event.classified_at.is_(None))
+                .order_by(Event.created_at.asc())
+                .limit(limit)
+            )
+        ).all()
+        pending_payloads = [
+            (
+                event.id,
+                [
+                    Path(frame.file_path)
+                    for frame in sorted(event.frames, key=lambda frame: frame.sequence_num)
+                ],
+            )
+            for event in pending_events
+        ]
+
+    processed = 0
+    for event_id, frame_paths in pending_payloads:
+        if not frame_paths:
+            logger.warning(
+                "Skipping inference backfill for event %s because no frames were found",
+                event_id,
+            )
+            continue
+        await classify_event_background(event_id, frame_paths)
+        processed += 1
+
+    logger.info(
+        "Inference backfill attempted for %s event(s); processed=%s",
+        len(pending_events),
+        processed,
+    )
+    return processed

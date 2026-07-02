@@ -8,6 +8,7 @@ from typing import Any
 
 import requests
 
+from .queue import get_active_queue_counts
 from .transfer import wifi_off, wifi_on
 
 
@@ -100,6 +101,10 @@ def collect_telemetry(
     if queue_depth is not None:
         telemetry["queue_depth"] = queue_depth
 
+    queued_event_count = _queued_event_count(frame_queue_dir)
+    if queued_event_count is not None:
+        telemetry["queued_event_count"] = queued_event_count
+
     disk_free_mb = _disk_free_mb(frame_queue_dir)
     if disk_free_mb is not None:
         telemetry["disk_free_mb"] = disk_free_mb
@@ -116,9 +121,17 @@ def collect_telemetry(
 
 
 def _queue_depth(frame_queue_dir: Path | None) -> int | None:
-    if frame_queue_dir is None or not frame_queue_dir.exists():
+    counts = get_active_queue_counts(frame_queue_dir)
+    if counts is None:
         return None
-    return sum(1 for path in frame_queue_dir.glob("*.jpg") if path.is_file())
+    return counts.queued_frames
+
+
+def _queued_event_count(frame_queue_dir: Path | None) -> int | None:
+    counts = get_active_queue_counts(frame_queue_dir)
+    if counts is None:
+        return None
+    return counts.queued_events
 
 
 def _disk_free_mb(frame_queue_dir: Path | None) -> int | None:

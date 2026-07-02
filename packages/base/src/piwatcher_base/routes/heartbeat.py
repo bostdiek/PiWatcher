@@ -24,6 +24,7 @@ UptimeSecondsForm = Annotated[int | None, Form()]
 WifiRssiDbmForm = Annotated[int | None, Form()]
 DiskFreeMbForm = Annotated[int | None, Form()]
 QueueDepthForm = Annotated[int | None, Form()]
+QueuedEventCountForm = Annotated[int | None, Form()]
 CpuTempCForm = Annotated[float | None, Form()]
 WifiPowerSaveForm = Annotated[bool | None, Form()]
 SoftwareVersionForm = Annotated[str | None, Form()]
@@ -39,6 +40,7 @@ async def receive_heartbeat(
     wifi_rssi_dbm: WifiRssiDbmForm = None,
     disk_free_mb: DiskFreeMbForm = None,
     queue_depth: QueueDepthForm = None,
+    queued_event_count: QueuedEventCountForm = None,
     cpu_temp_c: CpuTempCForm = None,
     wifi_power_save: WifiPowerSaveForm = None,
     software_version: SoftwareVersionForm = None,
@@ -58,6 +60,7 @@ async def receive_heartbeat(
             wifi_rssi_dbm=wifi_rssi_dbm,
             disk_free_mb=disk_free_mb,
             queue_depth=queue_depth,
+            queued_event_count=queued_event_count,
             cpu_temp_c=cpu_temp_c,
             wifi_power_save=wifi_power_save,
             software_version=software_version,
@@ -96,6 +99,7 @@ async def camera_health(session: DbSession) -> list[dict[str, object]]:
             "wifi_rssi_dbm": heartbeat.wifi_rssi_dbm,
             "disk_free_mb": heartbeat.disk_free_mb,
             "queue_depth": heartbeat.queue_depth,
+            "queued_event_count": heartbeat.queued_event_count,
             "cpu_temp_c": heartbeat.cpu_temp_c,
             "wifi_power_save": heartbeat.wifi_power_save,
             "software_version": heartbeat.software_version,

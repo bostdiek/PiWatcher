@@ -1,23 +1,102 @@
 {% extends "base.html" %}
-{% block title %}Camera Health{% endblock %}
+{% block title %}System Health{% endblock %}
 
 {% block content %}
 <section class="space-y-6">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
             <p class="text-sm uppercase tracking-wide text-emerald-300">Camera fleet</p>
-            <h1 class="text-3xl font-semibold text-white">Health</h1>
+            <h1 class="text-3xl font-semibold text-white">System Health</h1>
         </div>
         <a href="/health{% if not show_archived %}?show_archived=1{% endif %}" class="self-start rounded-md border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:border-emerald-400 hover:text-white">
             {% if show_archived %}Hide archived{% else %}Show archived{% endif %}
         </a>
     </div>
 
+    {% set base_service = base_health.service_states.get("piwatcher-base.service") if base_health and base_health.service_states else None %}
+    {% set inference_service = base_health.service_states.get("piwatcher-inference.service") if base_health and base_health.service_states else None %}
+    <article class="rounded-lg border border-gray-800 bg-gray-900 p-4">
+        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+                <p class="text-sm uppercase tracking-wide text-emerald-300">Base station</p>
+                <h2 class="text-2xl font-semibold text-white">Host health</h2>
+            </div>
+            <p class="text-xs text-gray-500">Updated {{ base_health.generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') if base_health and base_health.generated_at else '--' }}</p>
+        </div>
+        <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4 lg:grid-cols-6">
+            <div class="rounded-md bg-gray-950 p-3">
+                <dt class="text-gray-500">CPU temp</dt>
+                <dd class="text-lg font-semibold text-white">{{ "%.1f"|format(base_health.cpu_temp_c) if base_health and base_health.cpu_temp_c is not none else "--" }} C</dd>
+            </div>
+            <div class="rounded-md bg-gray-950 p-3">
+                <dt class="text-gray-500">Inferences ({{ inference_activity.lookback_minutes if inference_activity and inference_activity.lookback_minutes else 15 }}m)</dt>
+                <dd class="text-lg font-semibold text-white">{{ inference_activity.sample_count if inference_activity else 0 }}</dd>
+                <p class="text-xs text-gray-500">Events: {{ inference_activity.event_count if inference_activity else 0 }}</p>
+            </div>
+            <div class="rounded-md bg-gray-950 p-3">
+                <dt class="text-gray-500">Disk free</dt>
+                <dd class="text-lg font-semibold text-white">{{ "%.1f"|format((base_health.disk_free_bytes or 0) / 1073741824) if base_health and base_health.disk_free_bytes is not none else "--" }} GB</dd>
+            </div>
+            <div class="rounded-md bg-gray-950 p-3">
+                <dt class="text-gray-500">Disk used</dt>
+                <dd class="text-lg font-semibold text-white">{{ "%.1f"|format(base_health.disk_used_pct) if base_health and base_health.disk_used_pct is not none else "--" }}%</dd>
+            </div>
+            <div class="rounded-md bg-gray-950 p-3">
+                <dt class="text-gray-500">Uptime</dt>
+                <dd class="text-lg font-semibold text-white">{{ ((base_health.uptime_seconds or 0) // 3600) if base_health and base_health.uptime_seconds is not none else "--" }} h</dd>
+            </div>
+            <div class="rounded-md bg-gray-950 p-3">
+                <dt class="text-gray-500">Load (1m)</dt>
+                <dd class="text-lg font-semibold text-white">{{ "%.2f"|format(base_health.load_1m) if base_health and base_health.load_1m is not none else "--" }}</dd>
+            </div>
+            <div class="rounded-md bg-gray-950 p-3">
+                <dt class="text-gray-500">Storage path</dt>
+                <dd class="truncate text-sm font-semibold text-white" title="{{ base_health.frame_storage_path if base_health else '--' }}">{{ base_health.frame_storage_path if base_health else "--" }}</dd>
+            </div>
+        </dl>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <div class="rounded-md border border-gray-800 bg-gray-950 p-3">
+                <p class="text-xs uppercase tracking-wide text-gray-500">Base service</p>
+                <p class="mt-1 text-sm text-gray-300">Active: <span class="font-semibold text-white">{{ base_service.active if base_service else "--" }}</span></p>
+                <p class="text-sm text-gray-300">Enabled: <span class="font-semibold text-white">{{ base_service.enabled if base_service else "--" }}</span></p>
+            </div>
+            <div class="rounded-md border border-gray-800 bg-gray-950 p-3">
+                <p class="text-xs uppercase tracking-wide text-gray-500">Inference service</p>
+                <p class="mt-1 text-sm text-gray-300">Active: <span class="font-semibold text-white">{{ inference_service.active if inference_service else "--" }}</span></p>
+                <p class="text-sm text-gray-300">Enabled: <span class="font-semibold text-white">{{ inference_service.enabled if inference_service else "--" }}</span></p>
+            </div>
+        </div>
+        <div class="mt-4 h-36 rounded-md border border-gray-800 bg-gray-950 p-3">
+            <div class="mb-2 flex items-center justify-between gap-3">
+                <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Base CPU temperature ({{ base_health.cpu_temp_history.lookback_minutes if base_health and base_health.cpu_temp_history and base_health.cpu_temp_history.lookback_minutes else 15 }}m)</p>
+                <p class="text-xs text-gray-400">Latest: {{ "%.1f"|format(base_health.cpu_temp_c) if base_health and base_health.cpu_temp_c is not none else "--" }} C</p>
+            </div>
+            <canvas id="base-cpu-chart" aria-label="Base CPU temperature history"></canvas>
+        </div>
+    </article>
+
+    <article class="overflow-hidden rounded-xl border border-gray-800 bg-gray-900 shadow-lg shadow-black/20">
+        <div class="flex flex-col gap-1 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+                <p class="text-sm uppercase tracking-wide text-emerald-300">Diagnostics</p>
+                <h2 class="text-xl font-semibold text-white">Inference activity</h2>
+            </div>
+            <p class="text-sm text-gray-400">{{ inference_log_view.filtered_count }} matching entries in last {{ inference_log_view.lookback_minutes }} minutes</p>
+        </div>
+        {% if inference_log_view.error_message %}
+        <div class="mx-4 mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            {{ inference_log_view.error_message }}
+        </div>
+        {% endif %}
+        <pre class="max-h-64 overflow-x-auto overflow-y-auto px-4 py-4 text-xs leading-6 text-gray-200">{% if inference_log_view.has_entries %}{{ (inference_log_view.display_lines | default(inference_log_view.lines, true)) | join('\n') }}{% else %}No recent inference-specific log entries in the current lookback window.{% endif %}</pre>
+    </article>
+
     <div class="grid gap-4 lg:grid-cols-2">
         {% for camera in cameras_health %}
         {% set battery_pct = camera.get("battery_pct") %}
         {% set wifi_rssi_dbm = camera.get("wifi_rssi_dbm") %}
-        {% set queue_depth = camera.get("queue_depth") %}
+        {% set queued_frame_count = camera.get("queued_frame_count") %}
+        {% set queued_event_count = camera.get("queued_event_count") %}
         {% set cpu_temp_c = camera.get("cpu_temp_c") %}
         {% set disk_free_mb = camera.get("disk_free_mb") %}
         {% set uptime_seconds = camera.get("uptime_seconds") %}
@@ -46,8 +125,12 @@
                     <dd class="text-lg font-semibold text-white">{{ wifi_rssi_dbm if wifi_rssi_dbm is not none else "--" }} dBm</dd>
                 </div>
                 <div class="rounded-md bg-gray-950 p-3">
-                    <dt class="text-gray-500">Queue</dt>
-                    <dd class="text-lg font-semibold text-white">{{ queue_depth if queue_depth is not none else "--" }}</dd>
+                    <dt class="text-gray-500">Queued frames</dt>
+                    <dd class="text-lg font-semibold text-white">{{ queued_frame_count if queued_frame_count is not none else "--" }}</dd>
+                </div>
+                <div class="rounded-md bg-gray-950 p-3">
+                    <dt class="text-gray-500">Queued events</dt>
+                    <dd class="text-lg font-semibold text-white">{{ queued_event_count if queued_event_count is not none else "--" }}</dd>
                 </div>
                 <div class="rounded-md bg-gray-950 p-3">
                     <dt class="text-gray-500">CPU</dt>
@@ -80,12 +163,26 @@
                     <canvas id="wifi-chart-{{ loop.index }}" aria-label="Wi-Fi signal history for {{ camera.camera_id }}"></canvas>
                 </div>
                 <div class="h-28 rounded-md bg-gray-950 p-3">
-                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Queue depth (frames)</p>
-                    <canvas id="queue-chart-{{ loop.index }}" aria-label="Queue depth history for {{ camera.camera_id }}"></canvas>
+                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Queued frames</p>
+                    <canvas id="queued_frames-chart-{{ loop.index }}" aria-label="Queued frame history for {{ camera.camera_id }}"></canvas>
                 </div>
                 <div class="h-28 rounded-md bg-gray-950 p-3">
-                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">CPU temperature (C)</p>
+                    <p class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Queued events</p>
+                    <canvas id="queued_events-chart-{{ loop.index }}" aria-label="Queued event history for {{ camera.camera_id }}"></canvas>
+                </div>
+                <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <div class="mb-2 flex items-center justify-between gap-3">
+                        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">CPU temperature (24h)</p>
+                        <p class="text-[11px] text-gray-400">Latest: {{ "%.1f"|format(cpu_temp_c) if cpu_temp_c is not none else "--" }} C</p>
+                    </div>
                     <canvas id="temperature-chart-{{ loop.index }}" aria-label="CPU temperature history for {{ camera.camera_id }}"></canvas>
+                </div>
+                <div class="h-28 rounded-md bg-gray-950 p-3">
+                    <div class="mb-2 flex items-center justify-between gap-3">
+                        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">CPU temperature (15m)</p>
+                        <p class="text-[11px] text-gray-400">Latest: {{ "%.1f"|format(cpu_temp_c) if cpu_temp_c is not none else "--" }} C</p>
+                    </div>
+                    <canvas id="temperature_15m-chart-{{ loop.index }}" aria-label="CPU temperature last 15 minutes for {{ camera.camera_id }}"></canvas>
                 </div>
             </div>
             <form action="/health/{% if camera.archived %}unarchive{% else %}archive{% endif %}" method="post" class="mt-5 flex justify-end">
@@ -103,11 +200,14 @@
 
 <script>
     const healthCharts = {{ chart_data_json | safe }};
+    const baseCpuChart = {{ base_cpu_chart_json | safe }};
     const metricConfig = {
         battery: { label: "Battery", unit: "%", color: "#34d399", min: 0, max: 100 },
         wifi: { label: "Wi-Fi RSSI", unit: "dBm", color: "#60a5fa" },
-        queue: { label: "Queue depth", unit: "frames", color: "#f59e0b", min: 0 },
+        queued_frames: { label: "Queued frames", unit: "frames", color: "#f59e0b", min: 0 },
+        queued_events: { label: "Queued events", unit: "events", color: "#a78bfa", min: 0 },
         temperature: { label: "CPU temperature", unit: "C", color: "#f87171", min: 0 },
+        temperature_15m: { label: "CPU temperature (15m)", unit: "C", color: "#fb7185", min: 0 },
     };
 
     function renderMetricChart(camera, index, metricName) {
@@ -180,8 +280,77 @@
         });
     }
 
+    function renderBaseCpuChart() {
+        const element = document.getElementById("base-cpu-chart");
+        if (!element || !baseCpuChart || !baseCpuChart.values || baseCpuChart.values.length === 0) return;
+
+        new Chart(element, {
+            type: "line",
+            data: {
+                labels: baseCpuChart.labels,
+                datasets: [{
+                    label: "Base CPU temperature (C)",
+                    data: baseCpuChart.values,
+                    borderColor: "#f97316",
+                    backgroundColor: "#f9731622",
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    fill: true,
+                    tension: 0.35,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => `Base CPU: ${context.parsed.y} C`,
+                        },
+                    },
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        ticks: {
+                            color: "#9ca3af",
+                            maxTicksLimit: 4,
+                        },
+                        grid: {
+                            display: false,
+                        },
+                        title: {
+                            display: true,
+                            text: "Time",
+                            color: "#9ca3af",
+                        },
+                    },
+                    y: {
+                        display: true,
+                        min: 0,
+                        ticks: {
+                            color: "#9ca3af",
+                            maxTicksLimit: 4,
+                            callback: (value) => `${value} C`,
+                        },
+                        grid: {
+                            color: "rgba(156, 163, 175, 0.12)",
+                        },
+                        title: {
+                            display: true,
+                            text: "C",
+                            color: "#9ca3af",
+                        },
+                    },
+                },
+            },
+        });
+    }
+
     healthCharts.forEach((camera, index) => {
-        ["battery", "wifi", "queue", "temperature"].forEach((metricName) => renderMetricChart(camera, index, metricName));
+        ["battery", "wifi", "queued_frames", "queued_events", "temperature", "temperature_15m"].forEach((metricName) => renderMetricChart(camera, index, metricName));
     });
+    renderBaseCpuChart();
 </script>
 {% endblock %}

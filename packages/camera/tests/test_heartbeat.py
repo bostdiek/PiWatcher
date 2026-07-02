@@ -89,8 +89,67 @@ def test_given_frame_queue_when_collect_telemetry_then_reports_queue_and_disk(
 
     # Assert
     assert telemetry["queue_depth"] == 1
+    assert telemetry["queued_event_count"] == 0
     disk_free_mb = telemetry["disk_free_mb"]
     assert isinstance(disk_free_mb, int)
     assert disk_free_mb > 0
     assert telemetry["wifi_power_save"] is False
     assert telemetry["software_version"] == "0.1.0"
+
+
+def test_given_durable_bundle_when_collect_telemetry_then_reports_queued_event_count(
+    tmp_path,
+) -> None:
+    # Arrange
+    frame_queue = tmp_path / "frames"
+    bundle_root = frame_queue / "events" / "2026" / "06" / "28" / "feeder-cam" / "event-1"
+    bundle_root.mkdir(parents=True)
+    (bundle_root / "frame_0000.jpg").write_bytes(b"frame")
+    (bundle_root / "event.json").write_text(
+        """
+{
+  "schema_version": 1,
+  "event_id": "event-1",
+  "camera_id": "feeder-cam",
+  "event_start": "2026-06-28T16:00:00+00:00",
+  "event_end": null,
+  "status": "pending",
+  "attempt_count": 0,
+  "last_attempt_at": null,
+  "next_attempt_at": null,
+  "last_error": null,
+  "upload_started_at": null,
+  "frames": [
+    {
+      "sequence_num": 0,
+      "file_name": "frame_0000.jpg",
+      "captured_at": "2026-06-28T16:00:00+00:00"
+    }
+  ],
+  "created_at": "2026-06-28T16:00:00+00:00",
+  "updated_at": "2026-06-28T16:00:00+00:00"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    # Act
+    telemetry = collect_telemetry(frame_queue, wifi_power_save=None)
+
+    # Assert
+    assert telemetry["queue_depth"] == 1
+    assert telemetry["queued_event_count"] == 1
+
+
+def test_given_missing_queue_dir_when_collect_telemetry_then_omits_queued_event_count(
+    tmp_path,
+) -> None:
+    # Arrange
+    missing_queue = tmp_path / "missing"
+
+    # Act
+    telemetry = collect_telemetry(missing_queue, wifi_power_save=None)
+
+    # Assert
+    assert "queue_depth" not in telemetry
+    assert "queued_event_count" not in telemetry

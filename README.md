@@ -1,7 +1,7 @@
 ---
 title: PiWatcher
 description: Motion-triggered Raspberry Pi wildlife camera system with a Pi 5 base station, PostgreSQL storage, and LAN dashboard.
-ms.date: 2026-06-28
+ms.date: 2026-07-01
 ms.topic: overview
 ---
 
@@ -168,6 +168,9 @@ LLAMA_SWAP_MEDIA_PATH=/home/bostdiek/Downloads
 
 The generated llama-swap config passes an explicit local `--model` path to `llama-server`. The `--model` option does not download model files. `deploy/setup-llama-swap.sh` downloads `LLAMA_SWAP_MODEL_URL` only when that URL is configured; otherwise, place `LLAMA_SWAP_MODELS_DIR/LLAMA_SWAP_MODEL_FILE` on disk before starting inference.
 
+> [!IMPORTANT]
+> For host inference, `.env` is the configuration source of truth. The `piwatcher-inference.service` unit runs `deploy/setup-llama-swap.sh` as an `ExecStartPre` step, which regenerates `deploy/llama-swap/config.yaml` before `llama-swap` starts. Update `.env` instead of editing `config.yaml` directly.
+
 Vision classification requires the matching multimodal projector. When `LLAMA_SWAP_MMPROJ_FILE` is configured, `deploy/setup-llama-swap.sh` also downloads `LLAMA_SWAP_MMPROJ_URL` when needed and adds `--mmproj` to the generated llama-server command.
 
 The Pi 5 boots from NVMe, so the default deployment paths use `bostdiek`-owned directories under `/home/bostdiek/piwatcher` instead of a separate `/mnt/nvme` mount.
@@ -192,13 +195,23 @@ START_INFERENCE=true make deploy-inference BASE=pi5.local BASE_USER=bostdiek
 Keep Pi-specific base settings in a private `pi5.env` file. `make deploy-base`
 copies `pi5.env` to the remote project as `.env` when the file exists, which
 keeps Mac development paths out of the Pi runtime. Use `BASE_ENV_FILE` to deploy
-a different local env profile.
+a different local env profile. Base deploy preserves the previous enabled/running
+service state by default. Set `START_INFERENCE=true` when you also want host
+inference config regenerated from `.env` and host inference restarted after base
+deploy. Set `BACKFILL_INFERENCE=true` to launch a bounded one-shot backfill for
+pending events after deploy.
 
 ```bash
 cp pi5.env.example pi5.env
+make deploy-base BASE=pi5.local BASE_USER=bostdiek
 START_BASE=true ENABLE_BASE_SERVICE=true make deploy-base BASE=pi5.local BASE_USER=bostdiek
+START_BASE=true START_INFERENCE=true make deploy-base BASE=pi5.local BASE_USER=bostdiek
+START_BASE=true START_INFERENCE=true BACKFILL_INFERENCE=true BACKFILL_LIMIT=25 make deploy-base BASE=pi5.local BASE_USER=bostdiek
 BASE_ENV_FILE=staging.env make deploy-base BASE=pi5.local BASE_USER=bostdiek
 ```
+
+When `BACKFILL_INFERENCE=true`, deploy starts a background backfill process and
+writes output to `/tmp/piwatcher-backfill.log` on the Pi 5.
 
 Keep `mac.env`, `pi5.env`, and `.env` out of source control because they contain
 the shared API key and host-specific paths.
@@ -243,11 +256,21 @@ For local testing, deploy a camera from your Mac with a generated camera `.env` 
 make deploy-camera CAM=pizero.local CAMERA_USER=pizero
 ```
 
-That target detects your Mac's Wi-Fi IP for `SERVER_URL`, copies the camera source package, writes `/home/<user>/piwatcher/.env`, runs the setup script, and leaves the camera service stopped for local safety. Start it explicitly when you are ready to test capture:
+That target detects your Mac's Wi-Fi IP for `SERVER_URL`, copies the camera source package, writes `/home/<user>/piwatcher/.env`, runs the setup script, and preserves the current camera service run state. Use `START_CAMERA=true|false` to override:
 
 ```bash
 START_CAMERA=true make deploy-camera CAM=pizero.local CAMERA_USER=pizero
 ```
+
+For repeat deployments, keep per-camera values in env profiles and deploy by file path:
+
+```bash
+cp deploy/cameras/camera-profile.env.example deploy/cameras/roomtest.env
+make deploy-camera CAMERA_ENV_FILE=deploy/cameras/roomtest.env
+START_CAMERA=true make deploy-camera CAMERA_ENV_FILE=deploy/cameras/roomtest.env
+```
+
+`CAMERA_ENV_FILE` supports keys such as `CAMERA_HOST`, `CAMERA_USER`, `CAMERA_ID`, and `SERVER_URL`.
 
 Enable camera startup on boot only when the node is ready for unattended operation:
 
@@ -261,7 +284,7 @@ Provision each Pi Zero manually when you want to run setup without writing the c
 make setup-camera CAM=feeder-cam.local
 ```
 
-The setup script installs Raspberry Pi camera dependencies, enables I2C for PiSugar battery readings, configures passwordless `rfkill` access for Wi-Fi power control, and installs the systemd service. It leaves the service disabled unless `ENABLE_CAMERA_SERVICE=true` is set.
+The setup script installs Raspberry Pi camera dependencies, enables I2C for PiSugar battery readings, configures passwordless `rfkill` access for Wi-Fi power control, and installs the systemd service. It preserves the current enabled/disabled service state unless `ENABLE_CAMERA_SERVICE=true|false` is provided.
 
 Create `/home/pi/piwatcher/.env` on each camera:
 
@@ -318,7 +341,7 @@ Base station settings are loaded from `.env` by `piwatcher_base.config.Settings`
 | `LLAMA_SWAP_IMAGE`       | Docker image for local/development llama-swap                      | `ghcr.io/mostlygeek/llama-swap:unified-vulkan` |
 | `LLAMA_SWAP_RUNTIME`     | Setup mode for generated llama-swap config                         | `host`                                         |
 | `LLAMA_SWAP_BIN`         | Host llama-swap executable used by systemd                         | `/home/bostdiek/.local/bin/llama-swap`         |
-| `LLAMA_SERVER_BIN`       | Host llama-server executable written into llama-swap config        | `/home/bostdiek/Projects/llama.cpp/build/bin/llama-server` |
+| `LLAMA_SERVER_BIN`       | Host llama-server executable written into llama-swap config        | `/home/.../llama-server`                       |
 | `LLAMA_SWAP_LISTEN`      | Host llama-swap listen address                                     | `127.0.0.1:8080`                               |
 | `LLAMA_SWAP_MODELS_DIR`  | Host directory containing local GGUF model files                   | `/home/bostdiek/piwatcher/models`              |
 | `LLAMA_SWAP_MODEL_FILE`  | Main GGUF model filename expected by llama-swap config             | `LFM2.5-VL-450M-Q4_0.gguf`                     |
@@ -335,24 +358,135 @@ Base station settings are loaded from `.env` by `piwatcher_base.config.Settings`
 
 Camera settings are loaded from `/home/pi/piwatcher/.env`.
 
-| Variable                     | Purpose                                                                          | Default                 |
-| ---------------------------- | -------------------------------------------------------------------------------- | ----------------------- |
-| `CAMERA_ID`                  | Stable camera identifier stored with events                                      | Required                |
-| `SERVER_URL`                 | Base station URL                                                                 | Required                |
-| `PIWATCHER_API_KEY`          | Shared bearer token                                                              | Required                |
-| `MOTION_THRESHOLD`           | Pixel difference threshold for motion detection                                  | `7.0`                   |
-| `MIN_CHANGED_PCT`            | Minimum changed-pixel percentage                                                 | `2.0`                   |
-| `CAPTURE_FPS`                | JPEG capture rate during motion events                                           | `2.0`                   |
-| `CAPTURE_MIN_DURATION`       | Minimum event capture duration in seconds                                        | `10.0`                  |
-| `COOLDOWN_SECONDS`           | Quiet period before closing an event                                             | `5.0`                   |
-| `HEARTBEAT_INTERVAL`         | Standalone heartbeat interval in seconds                                         | `900`                   |
-| `LORES_WIDTH`                | Low-resolution motion frame width                                                | `160`                   |
-| `LORES_HEIGHT`               | Low-resolution motion frame height                                               | `120`                   |
-| `MAIN_WIDTH`                 | Captured JPEG width                                                              | `1024`                  |
-| `MAIN_HEIGHT`                | Captured JPEG height                                                             | `1024`                  |
-| `FRAME_QUEUE_DIR`            | Local queue for captured frames                                                  | `/tmp/piwatcher/frames` |
-| `WIFI_POWER_SAVE`            | Whether the camera may turn Wi-Fi off between uploads                            | `true`                  |
-| `WIFI_STARTUP_GRACE_SECONDS` | Startup recovery window where Wi-Fi stays on before power saving can turn it off | `600`                   |
+| Variable                      | Purpose                                                                          | Default                 |
+| ----------------------------- | -------------------------------------------------------------------------------- | ----------------------- |
+| `CAMERA_ID`                   | Stable camera identifier stored with events                                      | Required                |
+| `SERVER_URL`                  | Base station URL                                                                 | Required                |
+| `PIWATCHER_API_KEY`           | Shared bearer token                                                              | Required                |
+| `MOTION_THRESHOLD`            | Pixel difference threshold for motion detection                                  | `7.0`                   |
+| `MIN_CHANGED_PCT`             | Minimum changed-pixel percentage                                                 | `2.0`                   |
+| `CAPTURE_FPS`                 | JPEG capture rate during motion events                                           | `2.0`                   |
+| `CAPTURE_MIN_DURATION`        | Minimum event capture duration in seconds                                        | `10.0`                  |
+| `COOLDOWN_SECONDS`            | Quiet period before closing an event                                             | `5.0`                   |
+| `HEARTBEAT_INTERVAL`          | Standalone heartbeat interval in seconds                                         | `900`                   |
+| `LORES_WIDTH`                 | Low-resolution motion frame width                                                | `160`                   |
+| `LORES_HEIGHT`                | Low-resolution motion frame height                                               | `120`                   |
+| `MAIN_WIDTH`                  | Captured JPEG width                                                              | `1024`                  |
+| `MAIN_HEIGHT`                 | Captured JPEG height                                                             | `1024`                  |
+| `FRAME_QUEUE_DIR`             | Local queue for captured frames                                                  | `/tmp/piwatcher/frames` |
+| `WIFI_POWER_SAVE`             | Whether the camera may turn Wi-Fi off between uploads                            | `true`                  |
+| `WIFI_STARTUP_GRACE_SECONDS`  | Startup recovery window where Wi-Fi stays on before power saving can turn it off | `600`                   |
+| `QUEUE_DRAIN_MAX_EVENTS`      | Maximum durable queue events drained per idle cycle                              | `2`                     |
+| `QUEUE_DRAIN_MAX_SECONDS`     | Maximum wall-clock seconds spent draining queue per idle cycle                   | `15`                    |
+| `QUEUE_RETRY_INITIAL_SECONDS` | Initial retry backoff after a retryable upload failure                           | `30`                    |
+| `QUEUE_RETRY_MAX_SECONDS`     | Maximum retry backoff cap for durable queue uploads                              | `3600`                  |
+| `QUEUE_UPLOAD_LEASE_SECONDS`  | Lease timeout before stale uploading bundles are returned to pending             | `300`                   |
+
+## Camera Queue Backlog Cleanup
+
+The camera runtime writes new captures into durable event bundles under `FRAME_QUEUE_DIR/events/` with one `event.json` manifest per event bundle. Upload retries rely on these bundles so the original motion event boundaries stay intact across restarts and network failures.
+
+Bundle layout:
+
+```text
+FRAME_QUEUE_DIR/
+    events/
+        YYYY/
+            MM/
+                DD/
+                    <camera-id-slug>/
+                        <event-id>/
+                            event.json
+                            frame_0000.jpg
+                            frame_0001.jpg
+```
+
+Each bundle manifest stores durable event metadata including `event_id`, `camera_id`, `event_start`, optional `event_end`, ordered frame entries, and retry state fields such as `status`, `attempt_count`, `last_attempt_at`, `next_attempt_at`, and `last_error`.
+
+Top-level loose `*.jpg` files in `FRAME_QUEUE_DIR` are treated as legacy backlog. They are included in `queue_depth` telemetry, but they do not preserve reliable event boundaries and should not be replayed as complete events.
+
+Metric meaning:
+
+* `queue_depth` is queued frame count, not queued event count
+* `queued_event_count` is queued durable event bundle count and can be null when the camera has not reported the metric yet
+
+In mixed fleets, older cameras can still report only `queue_depth`. In that case, dashboard views should treat `queued_event_count` as missing data rather than as zero.
+
+Use these explicit cleanup operations for legacy loose JPEG files:
+
+1. Inventory (non-destructive).
+2. Quarantine (recommended first destructive action).
+3. Delete only after explicit confirmation.
+
+Use this workflow in order to reduce accidental data loss.
+
+1. Inventory only (non-destructive default):
+
+```bash
+python - <<'PY'
+from pathlib import Path
+from piwatcher_camera.queue import inventory_legacy_backlog
+
+summary = inventory_legacy_backlog(Path('/tmp/piwatcher/frames'))
+print(summary)
+PY
+```
+
+1. Quarantine loose files into `FRAME_QUEUE_DIR/legacy/YYYYMMDDTHHMMSSZ/`:
+
+```bash
+python - <<'PY'
+from datetime import datetime, UTC
+from pathlib import Path
+from piwatcher_camera.queue import quarantine_legacy_backlog
+
+result = quarantine_legacy_backlog(
+    Path('/tmp/piwatcher/frames'),
+    now=datetime.now(UTC),
+)
+print(result)
+PY
+```
+
+1. Delete loose files only with explicit confirmation:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+from piwatcher_camera.queue import delete_legacy_backlog
+
+result = delete_legacy_backlog(
+    Path('/tmp/piwatcher/frames'),
+    confirm_delete=True,
+)
+print(result)
+PY
+```
+
+Before quarantine or delete actions, stop the camera service or lock queue writes so new files are not created while cleanup runs.
+
+> [!WARNING]
+> Legacy loose `*.jpg` files do not carry reliable event start/end boundaries, so replaying them as normal motion events can produce misleading event history.
+
+### Deployment and migration order
+
+Roll out base changes before camera changes:
+
+1. Deploy updated base code.
+2. Apply base database migrations so heartbeat writes can persist `queued_event_count`.
+3. Restart or redeploy the base service.
+4. Deploy updated camera code.
+5. Verify dashboard health cards show queued frames and queued events separately.
+
+If you roll out cameras before the base migration, heartbeat writes can fail on the base when cameras submit `queued_event_count`.
+
+Recommended migration command on the base host:
+
+```bash
+make base-migrate
+```
+
+After camera rollout, evaluate legacy loose files with inventory or quarantine before any deletion.
 
 ## Make Targets
 
@@ -368,8 +502,8 @@ Camera settings are loaded from `/home/pi/piwatcher/.env`.
 | `make base-inference-up`       | Alias for explicit local/development inference startup                                                                |
 | `make base-migrate`            | Apply Alembic migrations for the base station database                                                                |
 | `make base-up`                 | Start PostgreSQL, apply migrations, and run the base server. Add `ENABLE_INFERENCE=true` to start local inference too |
-| `make deploy-base`             | Deploy the base app and copy `pi5.env` to the Pi as `.env` when present                                               |
-| `make deploy-camera`           | Generate camera config locally, rsync code/config, run setup, and leave the camera stopped unless `START_CAMERA=true` |
+| `make deploy-base`             | Deploy base app, copy `pi5.env`, preserve service state, and optionally restart inference/backfill                    |
+| `make deploy-camera`           | Generate camera config locally or from `CAMERA_ENV_FILE`, deploy files, run setup, and preserve run state             |
 | `make update-cameras`          | Rsync camera package code and restart camera services                                                                 |
 | `make setup-camera CAM=<host>` | Copy and run the first-time Pi Zero provisioning script                                                               |
 

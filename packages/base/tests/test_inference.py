@@ -1,5 +1,6 @@
 """Inference pipeline tests."""
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from piwatcher_base.inference import (
     WildlifeClassification,
+    backfill_pending_inference,
     choose_classification,
     classification_prompt_text,
     classify_event_background,
@@ -16,7 +18,7 @@ from piwatcher_base.inference import (
     response_format_json_schema,
     sample_frame_paths,
 )
-from piwatcher_base.models import Event
+from piwatcher_base.models import Event, Frame
 
 
 def test_given_many_frames_when_sample_frame_paths_then_returns_even_sample(
@@ -85,7 +87,7 @@ def test_given_response_format_json_schema_when_built_then_contains_strict_schem
     schema = json_schema["schema"]
     assert schema["type"] == "object"
     assert schema["additionalProperties"] is False
-    assert schema["required"] == ["label", "confidence", "description"]
+    assert schema["required"] == ["description", "label", "confidence"]
     assert schema["properties"]["label"]["enum"][-1] == "empty"
 
 
@@ -95,7 +97,9 @@ def test_given_classification_prompt_when_built_then_keeps_guidance_minimal() ->
 
     # Assert
     assert prompt.startswith("What is the main thing visible in this image?")
-    assert "describe only what you actually see" in prompt
+    assert "First write a short factual description" in prompt
+    assert "Then choose the closest label" in prompt
+    assert "Finally provide confidence" in prompt
     assert "Use unknown if the subject is unclear" in prompt
     assert "empty if nothing relevant is visible" in prompt
 
@@ -180,7 +184,43 @@ async def test_given_hot_cpu_when_wait_for_safe_temperature_then_sleeps_until_co
     await inference.wait_for_safe_temperature(test_settings)
 
     # Assert
-    assert sleep_calls == [5]
+    assert sleep_calls == [5, 5]
+
+
+@pytest.mark.asyncio()
+async def test_given_cpu_never_cools_when_wait_for_safe_temperature_then_times_out_and_logs_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    test_settings,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Arrange
+    from piwatcher_base import inference
+
+    monkeypatch.setattr(test_settings, "max_inference_temp_c", 72.0)
+    monkeypatch.setattr(test_settings, "cooldown_temp_c", 60.0)
+
+    temperature_samples = [75.0] * (
+        (inference.THERMAL_WAIT_TIMEOUT_SECONDS // inference.THERMAL_WAIT_INTERVAL_SECONDS) + 2
+    )
+    temperatures = iter(temperature_samples)
+    sleep_calls: list[int] = []
+
+    async def sleep_stub(seconds: int) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(inference, "get_cpu_temp", lambda: next(temperatures))
+    monkeypatch.setattr(inference.asyncio, "sleep", sleep_stub)
+    caplog.set_level("WARNING", logger="piwatcher_base.inference")
+
+    # Act
+    await inference.wait_for_safe_temperature(test_settings)
+
+    # Assert
+    expected_sleep_calls = (
+        inference.THERMAL_WAIT_TIMEOUT_SECONDS // inference.THERMAL_WAIT_INTERVAL_SECONDS
+    )
+    assert len(sleep_calls) == expected_sleep_calls
+    assert "continuing inference to avoid permanently pending events" in caplog.text
 
 
 @pytest.mark.asyncio()
@@ -251,6 +291,12 @@ async def test_given_successful_inference_when_classify_event_then_logs_start_an
         "notify_detection",
         lambda *args, **kwargs: inference.asyncio.sleep(0),
     )
+
+    @asynccontextmanager
+    async def session_scope_stub():
+        yield db_session
+
+    monkeypatch.setattr(inference, "session_scope", session_scope_stub)
     caplog.set_level("INFO", logger="piwatcher_base.inference")
 
     # Act
@@ -259,3 +305,75 @@ async def test_given_successful_inference_when_classify_event_then_logs_start_an
     # Assert
     assert "Starting inference for event" in caplog.text
     assert "Finished inference for event" in caplog.text
+
+
+@pytest.mark.asyncio()
+async def test_given_pending_events_when_backfill_then_processes_oldest_up_to_limit(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    # Arrange
+    first_time = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+    second_time = datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
+    third_time = datetime(2026, 1, 1, 0, 2, tzinfo=UTC)
+
+    events = [
+        Event(
+            camera_id="roomtest",
+            event_start=first_time,
+            frame_count=1,
+            created_at=first_time,
+        ),
+        Event(
+            camera_id="roomtest",
+            event_start=second_time,
+            frame_count=1,
+            created_at=second_time,
+        ),
+        Event(
+            camera_id="roomtest",
+            event_start=third_time,
+            frame_count=1,
+            created_at=third_time,
+        ),
+    ]
+    db_session.add_all(events)
+    await db_session.flush()
+
+    for event in events:
+        frame_path = tmp_path / f"event_{event.id}.jpg"
+        frame_path.write_bytes(b"jpeg")
+        db_session.add(
+            Frame(
+                event_id=event.id,
+                sequence_num=0,
+                file_path=str(frame_path),
+                captured_at=event.event_start,
+            )
+        )
+
+    await db_session.commit()
+
+    processed_ids: list[int] = []
+
+    async def classify_stub(event_id: int, _frame_paths) -> None:
+        processed_ids.append(event_id)
+
+    monkeypatch.setattr(
+        "piwatcher_base.inference.classify_event_background",
+        classify_stub,
+    )
+
+    @asynccontextmanager
+    async def session_scope_stub():
+        yield db_session
+
+    monkeypatch.setattr("piwatcher_base.inference.session_scope", session_scope_stub)
+
+    # Act
+    processed = await backfill_pending_inference(limit=2)
+
+    # Assert
+    assert processed == 2
+    assert processed_ids == [events[0].id, events[1].id]
